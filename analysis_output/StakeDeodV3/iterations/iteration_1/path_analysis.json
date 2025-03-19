@@ -1,0 +1,20 @@
+{
+  "code_path": "stakeTokensV3 \u2192 availableAmountForClaim \u2192 withdrawTokensV3\n\n// In stakeTokensV3:\n// \u2022 depositCount is incremented and a new Deposits record is created with fields: depositAmount, timePeriodInDays, monthlyPercentage, etc.\n// \u2022 The user's deposit ID is pushed into userDepositIds[msg.sender].\n//\n// In availableAmountForClaim:\n// \u2022 For each deposit in userDepositIds, depositInfo[...] is used to compute the number of 30\u2010day periods since deposit (numberOfMonths) and to compute perPeriods rewards based on depositAmount and monthlyPercentage.\n// \u2022 The bonus is then summed with the referral earnings.\n//\n// In withdrawTokensV3:\n// \u2022 availableAmountForClaim is called and then tokens are transferred to the _userAddress after checking msg.sender matches _userAddress.",
+  "analysis_focus": "The calculations in availableAmountForClaim that use depositInfo[].depositAmount, depositInfo[].timePeriodInDays, and users[_userAddress].referalEarning, along with the accumulation of deposits via userDepositIds, represent the core of the token flow. The input parameters of stakeTokensV3 (tokenAmount, _days, and _referrer) are directly controlled by a user, and these values significantly affect the eventual withdrawal amount.",
+  "manipulation_strategy": "A user can manipulate the overall available withdrawal amount by repeatedly calling stakeTokensV3 with carefully chosen parameters. The user can deposit high token amounts (depositInfo[].depositAmount) and select a long staking duration (_days) to increase the maturityMonths, thereby increasing the multiplier for reward accrual. In addition, by specifying a referrer address (or by being the referrer), they can indirectly increase their referral earnings (users[_userAddress].referalEarning). The strategy involves stacking multiple deposits to maximize the cumulative rewards computed in availableAmountForClaim. Note that the require(msg.sender == _userAddress) in withdrawTokensV3 prevents withdrawing tokens for another account, but does not prevent a user from creating multiple deposits to benefit themselves.",
+  "expected_impact": "If a user is able to repeatedly create deposits with favorable parameters, they could artificially inflate their overall claimable token amount. This might lead to unexpectedly high withdrawal amounts based on the compounded rewards (both from staking and referrals) being drawn from the contract, potentially disrupting the intended token flow and economic balances of the staking ecosystem.",
+  "assumptions": "It is assumed that the user is able to interact with the staking function at will (i.e., no off\u2011chain restrictions or UI limitations control the parameters passed to stakeTokensV3). It is also assumed that the admin-set percentages (releasePercentageFromDays and getReferalBonusFromDays) are set to values that significantly impact the reward calculation. Finally, it is assumed that the only controls over withdrawals are the calculations in availableAmountForClaim, as tokens are transferred based solely on the input parameters that the user can manipulate via staking.",
+  "iteration_info": {
+    "iteration": 0,
+    "context": "Analyze only variables and dependencies that are easy to manipulate.",
+    "difficulty_level": "easy",
+    "variables_considered": [
+      "_userAddress",
+      "userDepositIds[_userAddress]",
+      "depositInfo[].depositAmount",
+      "depositInfo[].timePeriodInDays",
+      "users[_userAddress].referalEarning"
+    ],
+    "dependencies_considered": []
+  }
+}

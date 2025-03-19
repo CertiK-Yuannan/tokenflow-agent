@@ -1,0 +1,55 @@
+SMART CONTRACT TOKEN FLOW ANALYSIS SUMMARY
+==================================================
+
+ANALYSIS STATISTICS
+Iterations performed: 1
+Variables analyzed: 5/10
+Dependencies analyzed: 0/4
+Analysis completion: Some variables or dependencies not analyzed
+
+VULNERABILITY FOUND
+Type: Reward Calculation Manipulation via Repeated Deposits and Referral Bonus Inflation
+Confidence: high
+
+ATTACK SCENARIO:
+An attacker who controls one or more externally owned accounts (or a network of colluding accounts) can abuse the fact that the reward‐calculation logic aggregates rewards across an arbitrary number of deposits and uses user‐controlled parameters (tokenAmount and _days) in both the staking and referral bonus formulas. In stakeTokensV3 the referral bonus is computed using (user.referalEarning.add(tokenAmount)) multiplied by a percentage (getReferalBonusFromDays[_days]) with no check that the bonus is based solely on the deposit amount. (Note that ‘user’ here is actually msg.sender so it is confusingly used in place of what should be the referrer’s own state.) As a result, by depositing repeatedly with “favorable” parameters (for example, choosing a _days value for which the admin‐set percentages are very generous) and by “referencing” colluding accounts (or even inadvertently boosting one’s own referral earnings via cross‑calls), an attacker can “stack” deposits so that the aggregated claimable amount computed by availableAmountForClaim far exceeds what one would expect from a single well‐behaved deposit. When the withdrawal function is called, the contract transfers the entire computed available amount (which now includes both the maturity rewards from the deposit(s) and an inflated referral bonus) from the contract balance. In an environment where the percentages were misconfigured or left “open” (e.g. the admin sets very high releasePercentageFromDays or getReferalBonusFromDays values), the attacker may be able to extract amounts that significantly exceed the intended yield on funds, effectively profiting from the manipulation of the calculation.
+
+PROFIT MECHANISM:
+By stacking many deposits under one account and boosting the referral bonus with carefully chosen parameters (via the _days argument and the associated bonus percentages), the attacker causes the availableAmountForClaim calculation to sum up an artificially high amount of tokens. When these rewards are withdrawn, the transferred amount (which is computed as deposit rewards plus referral earnings minus any previous withdrawals) far exceeds what would normally be allowed by a single deposit. This repeated inflation of rewards (both via the deposit’s own reward accrual and via referral bonus) gives the attacker a net profit relative to the value that was originally staked.
+
+EXPLOIT CODE/SEQUENCE:
+/* Example Transaction Sequence (pseudocode using a testing framework):
+
+   // Assume attacker controls two accounts: Attacker_A and Attacker_B
+   // Attacker_B will serve as the referrer in many deposits from Attacker_A
+
+   // 1. Attacker_A approves the staking contract for a high tokenAmount
+   token.approve(stakingContract.address, depositAmount);
+
+   // 2. Attacker_A calls stakeTokensV3 with _referrer = Attacker_B and with a _days value for which getReferalBonusFromDays and releasePercentageFromDays have been set high by admin
+   stakingContract.stakeTokensV3(depositAmount, attackerBAddress, favorableDaysValue);
+
+   // 3. Repeat the above call many times. Each call will add a new deposit record into userDepositIds[attackerAAddress] and it will also inflate the referral bonus for Attacker_B because the bonus is computed as
+   //    bonus = (users[attackerAAddress].referalEarning + depositAmount) * getReferalBonusFromDays[favorableDaysValue] / 1000
+   //    and then added to the referral earning of Attacker_B. (Note the mishandling in the bonus calculation.)
+
+   // 4. After waiting for sufficient time to accrue rewards (i.e. enough 30-day periods for each deposit), Attacker_A (or Attacker_B, depending on the caller in each withdraw) calls withdrawTokensV3 to pull out the sum of:
+   //    - The maturity rewards on all deposits (which include the original deposit amount plus the bonus computed monthly)
+   //    - The aggregated referral bonus that has been inflated by repeated calls.
+
+   // The end result is that the tokens transferred to the attacker are far higher than what a single deposit (or even an intended limited number of deposits) would generate.
+
+   // Pseudocode for a withdraw transaction:
+   stakingContract.withdrawTokensV3(attackerAAddress);
+   
+*/
+
+REASONING:
+The core of the exploit lies in the fact that the reward and referral bonus calculations are both parameterized by values that an attacker can control (tokenAmount and _days) and the aggregation of rewards across an unbounded number of deposits via userDepositIds. In stakeTokensV3, the bonus that is attributed to a referrer is computed using the caller’s referalEarning state combined with the deposit amount and then assigned to the referrer. This gives a vector for artificially inflating the bonus if the attacker uses multiple deposits and possibly colluding referrers. The availableAmountForClaim then aggregates over all such deposits without any safeguards that limit or “normalize” the reward accrual. As a result, an attacker who is willing to front the deposit tokens (which are later returned along with rewards) can, by repeatedly depositing with favorable parameters, manipulate the calculated claimable amount to extract a disproportionately high amount of tokens. This analysis examines the key manipulated variables (depositAmount, timePeriodInDays/_days, and referral earnings) and shows that their interplay leads to a feasible attack scenario.
+
+EVALUATION:
+The audit finding correctly identifies a weakness in the reward calculation logic. The referrer bonus is computed by taking the caller’s (msg.sender’s) referalEarning value and adding the tokenAmount, then multiplying by a bonus percentage derived from a user‑controlled _days parameter. Because there is no normalization or cap on how many deposits can be made, an attacker who controls several accounts (or uses colluding accounts) can repeatedly call stakeTokensV3 with favorable parameters to inflate referral earnings. Moreover, the aggregation in availableAmountForClaim sums all deposits and referral earnings, so the final claimable amount may far exceed what a well‑behaved deposit should produce. The attack scenario is economically viable if the admin has set high percentages via releasePercentageFromDays and getReferalBonusFromDays, and it relies on variables directly controlled by users (_days and tokenAmount).
+
+
+==================================================
+End of Report
