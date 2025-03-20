@@ -1,0 +1,33 @@
+{
+    "logic_extractor": {
+      "assumptions": {
+        "privileged_vars": "Variables or external dependencies controlled by a privileged account or initialized in the constructor should be considered immutable.",
+        "user_controlled_vars": "Variables or external dependencies directly controlled or updated by users should be considered highly susceptible to manipulation.",
+        "manipulation_hierarchy": "Variables should be categorized based on their difficulty of manipulation (easy, medium, hard, impossible)."
+      },
+      "attack_patterns": {}
+    },
+    "action_generator": {
+      "assumptions": {
+        "reentrancy_limitation": "If an external dependency is categorized as 'impossible' to manipulate and it does not use a .call method, reentrancy exploits should not be considered valid for this dependency."
+      },
+      "attack_patterns": {
+      }
+    },
+    "reflection": {
+      "assumptions": {
+        "strict_evaluation": "Strictly assess whether a variable is genuinely manipulable to achieve the attacker's goal.",
+        "false_positive_handling": "If a manipulation scenario is a false positive, determine whether additional conditions are required or if the variable should be excluded.",
+        "privileged_immutability": "Variables or external dependencies controlled by a privileged account or initialized in the constructor should be considered immutable. Any vulnerability related to those assumption is invalid."
+      },
+      "false_positive_rules": {
+        "check_preconditions": "Verify that all preconditions for the attack can realistically be met by an attacker",
+        "validate_profit_calculations": "Ensure that the profit calculation considers gas costs and other transaction fees",
+        "verify_control_flow": "Confirm that the control flow described in the attack is possible given the contract's execution path"
+      }
+    },
+    "meta": {
+      "last_updated": "2025-03-20T12:00:00.000Z",
+      "version": "1.0"
+    }
+  }

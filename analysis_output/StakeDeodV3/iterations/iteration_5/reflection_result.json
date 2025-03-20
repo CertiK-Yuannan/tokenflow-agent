@@ -1,0 +1,18 @@
+{
+  "goal_met": true,
+  "evaluation": "The analysis is sound. The referral bonus mechanism is indeed vulnerable to manipulation. In stakeTokensV3 the bonus is computed in two different branches depending on two ways to verify the referrer\u2019s stake status \u2013 one branch checks the local flag (userStakedStatus) and directly updates users[referrer].referalEarning, while the other (else\u2010if) uses an external call to check stake status and then calls addReferalEarning to update stakeReferal. Both these storage variables are later summed when a user calls availableAmountForClaim, meaning that an attacker controlling multiple depositors can deliberately have the referrer credited in both mappings. Moreover, the referral bonus is not subject to any separate vesting schedule, so once credited the bonus is immediately available. In practice, an attacker can deploy several EOAs to make small deposits using a pre\u2010staked referrer account and thereby \u201cdouble\u2010dip\u201d the bonus \u2013 effectively receiving extra tokens on top of what the underlying deposits warrant.",
+  "critical_flaws": "There are no critical flaws in the analysis that would invalidate the vulnerability. The control flow indeed allows crediting the bonus to two different storage locations and both are summed at withdrawal time. The external dependency and the admin\u2010controlled bonus percentages do not remove the attack vector under the stated assumptions.",
+  "overlooked_constraints": "The attacker does need to control several EOAs and front-load deposit amounts, but gas or transaction fees do not negate the profit potential. The analysis correctly assumes that the admin\u2010controlled bonus percentages remain nonzero and that the external check (ICheckStakeUser) cooperates with the alternating bonus crediting strategy.",
+  "variables_to_exclude": [],
+  "variables_to_include": [
+    "userStakedStatus",
+    "getReferalBonusFromDays",
+    "users[].referalEarning",
+    "stakeReferal"
+  ],
+  "evaluation_metadata": {
+    "iteration": 4,
+    "vulnerability_found": true,
+    "vulnerability_type": "Referral Bonus Manipulation and Accounting Inconsistency"
+  }
+}

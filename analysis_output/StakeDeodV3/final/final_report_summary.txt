@@ -4,50 +4,52 @@ SMART CONTRACT TOKEN FLOW ANALYSIS SUMMARY
 ANALYSIS STATISTICS
 Contract: StakeDeodV3
 Goal: Identify vulnerabilities in the code logic that allow an attacker to manipulate token flow for profit
-Iterations performed: 1
-Variables analyzed: 1/10
-Variables excluded: 2
-Dependencies analyzed: 1/7
+Iterations performed: 5
+Variables analyzed: 5/13
+Variables excluded: 0
+Dependencies analyzed: 5/7
 Analysis completion: Some variables or dependencies not analyzed
 
 CASE MEMORY SUMMARY
-Excluded variables: ['userDepositCounts', 'withdrawnAmount']
-Included variables: ['users[_userAddress].referalEarning', 'userStakedStatus', 'getReferalBonusFromDays']
+Excluded variables: []
+Included variables: []
 Analysis tricks count: 0
-Previous findings count: 1
+Previous findings count: 5
 
 VULNERABILITY FOUND
-Type: collusive referral abuse / economic manipulation
+Type: Unbacked Referral Bonus / Inflation Vulnerability
 Confidence: high
 
 ATTACK SCENARIO:
-An attacker who controls multiple addresses can abuse the referral‐bonus mechanism by using one account (the 'master' referrer) and many other controlled accounts (the 'depositors'). The attack works as follows. First the attacker makes a small legitimate stake with the master referrer account so that the checkUserStakedStatus(_referrer) (or the userStakedStatus flag) passes. Then, using a collusive depositor account that holds sufficient tokens, the attacker calls stakeTokensV3 with a chosen deposit amount and listing the master referrer as _referrer. The referral bonus is computed as bonus = (depositAmount * bonusPercentage) / divider and, rather than being deducted from the deposit, is simply added to the master referrer’s referral earnings. When the depositor later claims its matured deposit (which returns the entire principal plus interest according to the release schedule), the extra bonus “reward” credited to the master account is paid out on top. In effect, the attacker is not risking funds because the deposit principal is returned, and yet they are able to repeatedly trigger extra bonus rewards.
+An attacker who controls two addresses can abuse the referral bonus mechanism. In stakeTokensV3 the bonus for a valid referrer is credited directly to the referrer’s account (either in users[...] or stakeReferal mapping) and later added in availableAmountForClaim during withdrawal. The bonus is computed purely as a fraction of the staked amount of the referred deposit and is not ‘backed’ by any separate deposit. By carefully using one address (Account A) as a referrer and another (Account B) to perform a substantial deposit with Account A named as referrer, the attacker can eventually withdraw more tokens than originally deposited. In effect, Account B locks tokens in the contract while Account A (which only ever did a minimal self‐stake to be “valid”) can withdraw the referral bonus—thus “creating” extra token flow in a coordinated sequence.
 
 PROFIT MECHANISM:
-The attacker’s profit comes from the extra tokens credited to the master referrer account as referral earnings. Because the referral bonus is computed on every deposit made by any account that supplies A as the referrer, and because the deposit funds are eventually returned (with any fixed yield) to the depositor, the net effect is that bonus tokens are paid out in addition to returning staked amounts. Thus, if an attacker deposits repeatedly using collusive accounts, the aggregate bonus can be large relative to the actual net cost (after receiving back the staked capital).
+The referral bonus is computed as a percentage of a staker’s deposit and credited separately to the referrer’s record. By using two colluding accounts, the attacker makes account B deposit a relatively large amount while receipt of the bonus by account A (which did a trivial stake merely to qualify) allows them to later withdraw the bonus – thereby withdrawing more tokens from the contract than were deposited overall. The attacker, controlling both sides, is able to reassemble these funds to end up with both the bonus and, eventually, both staked amounts, effectively profiting extra tokens out of the token flow.
 
 EXPLOIT CODE/SEQUENCE:
-Transaction Sequence:
-// Step 1. Prepare master account (Account A) by staking a minimal amount to satisfy the referral condition
-A → stakeTokensV3(minimalAmount, someReferrer, _days);
-// (Assume now userStakedStatus[A] = true, or that checkUserStakedStatus(A) returns success.)
+Step 1 (Prepare referrer):
+  • Using account A (the planned referrer), perform a minimal stake (for example, deposit 1 token with any valid stakingDays) so that userStakedStatus[A] becomes TRUE.
 
-// Step 2. For each depositor account under attacker's control (Account B, Account C, ...):
-B → stakeTokensV3( depositAmount, A, _days );
-// The contract will execute:
-//   if (userStakedStatus[A] && B ≠ A) { bonus = (depositAmount * getReferalBonusFromDays[_days]) / 1000
-//      users[A].referalEarning += bonus }
-// Step 3. Wait until maturity; each depositor then claims its tokens:
-B → claimTokens();
-// Withdrawals return B's stake plus any yield but do not reduce A's referral earnings.
-// Finally, Account A claims its accumulated referral bonuses:
-A → claimTokens();
+Step 2 (Exploit referral bonus):
+  • From account B (the attacker’s second account), call stakeTokensV3 with parameters:
+      tokenAmount = X (a relatively large amount, say 100 tokens),
+      referrer = account A,
+      stakingDays = D (choose D such that getReferalBonusFromDays[D] is nonzero, possibly a value that is allowed by the admin’s configuration).
+  • Because account A is now already a staker and caller B is not equal to account A, the code branches into the first condition, and the referral bonus is computed as:
+       bonus = (X * getReferalBonusFromDays[D]) / 1000
+     and added to users[A].referalEarning.
+
+Step 3 (Withdrawal by referrer):
+  • After waiting any necessary short period (or even immediately if the bonus does not depend on elapsed time) account A invokes withdrawTokensV3, which calls availableAmountForClaim(A) and returns the bonus amount in addition to any minor amount from its own (minimal) deposit record.
+
+Step 4 (Profit):
+  • Because account A’s deposit was negligible, the withdrawal amount from account A is mostly the bonus generated by account B’s deposit. The tokens withdrawn come from the contract’s balance – which only consists of tokens deposited by stakers – so the attacker effectively extracts extra tokens that were never truly ‘backed’ by a matching deposit from account A.
 
 REASONING:
-Reviewing the pseudo-code step-by-step reveals that when a valid _referrer is supplied and the conditions (userStakedStatus or external check) are met, the contract credits bonus referral earnings to that referrer without deducting the bonus from the depositor’s stake. Given that the deposited tokens are later returned (along with any yield computed based on the deposit record), the referral bonus is an extra reward mechanism. An attacker who controls multiple accounts can use one account (ensuring it qualifies as a referrer) and then have multiple depositor accounts each stake tokens using that account as the referrer. As a consequence, the attacker ultimately receives all of the referral bonus rewards in addition to the return of each staked deposit. The economic arbitrage emerges because the bonus is ‘free’ extra tokens not coming out of the depositor’s funds. Detailed examination shows no inherent check limiting bonus accumulation, so provided that the bonus rate is nontrivial, repeated exploitation yields net profit. All the steps in the pseudo-code are feasible under typical ERC20 and staking conditions, so the vulnerability is practical.
+The attack stems from the fact that the contract separately credits referral bonuses based solely on the deposit value provided by any staker who names a valid referrer. Since referral earnings are stored in either users[referrer].referalEarning or stakeReferal[referrer] and then added (without considering any ‘backing’ by a separate deposit) when computing the total available withdrawal amount, an attacker controlling both the referrer and the staker accounts can induce a non‐backed bonus. The sequence is feasible because (1) the staker’s deposit is accepted and recorded before token transfer (but the token transfer itself is done with safe functions that do not permit reentrancy, per our assumptions), (2) the referral bonus calculation uses a user-controlled stakingDays (subject to admin mapping) and deposit token amount, and (3) the withdrawal simply subtracts the total withdrawn amount from a sum that includes the bonus, allowing the bonus to be “cashed out” once. In a real exploit the attacker deposits a small amount from the referrer (just enough to qualify) and a large amount from the staker, thereby extracting a healthy referral bonus that is effectively extra tokens from the contract.
 
 EVALUATION:
-The finding is legitimate. The referral mechanism in stakeTokensV3 is vulnerable to collusive abuse. An attacker can set up a minimal stake from a master account so that the userStakedStatus flag (or the external check by ICheckStakeUser) passes. Then, when one or more other controlled depositor accounts stake tokens using the master account as the referrer, the contract computes a referral bonus based on the deposit amount (with a bonus rate taken from getReferalBonusFromDays and a divisor of 1000) and credits it directly to the master account’s referral earnings. Since the depositor eventually gets back its entire principal and yield, the bonus is essentially “free” extra tokens. The bonus calculation itself is flawed because it uses the depositor’s current referralEarning value (which is typically zero) added to the tokenAmount, so the intended bonus is effectively based solely on the tokenAmount, but the logic does not deduct this bonus from any funds. This allows repeated abuse, meeting the goal of identifying a vulnerability in token flow manipulation. All prerequisites – controlling multiple accounts, having a minimal stake in the master account, and the referral bonus percentage being set to a nontrivial value – are realistic in many deployment scenarios.
+The finding correctly identifies that the referral bonus is computed entirely as a fraction of the staked amount and credited to the referrer, without requiring a separate deposit from the referrer. An attacker controlling two addresses (one with a minimal stake to qualify as an active staker and another to make a massive deposit while naming the first as referrer) can indeed cause the contract to record a bonus that is not properly 'backed' by an independent deposit from the referrer. When the referrer later calls withdrawTokensV3, the bonus (aggregated from users[_referrer].referalEarning and stakeReferal) is added to any minimal yield from their negligible self-stake. Thus, the contract will allow the withdrawal of an amount which exceeds what the referrer actually staked, effectively extracting extra tokens from the contract pool. The analysis is sound because the attack does not require any exotic conditions: it simply leverages the fact that the referral bonus calculation uses the staker’s deposit amount (and any carried forward bonus) and credits that result, and the contract does not introduce any checks tying that payout to an equivalent backing deposit from the referrer.
 
 
 ==================================================

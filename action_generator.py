@@ -87,6 +87,18 @@ class ActionGenerator:
         {code_representation}
         ```
         
+        ANALYSIS ASSUMPTIONS:
+        {json.dumps(assumptions, indent=2)}
+        
+        IMPORTANT: If an external dependency is categorized as 'impossible' to manipulate and it does not use a .call method, reentrancy exploits should not be considered valid for this dependency.
+        
+        ATTACK PATTERNS TO CONSIDER:
+        {json.dumps(attack_patterns, indent=2)}
+
+        CONTEXT:
+        - Variables analyzed in this iteration: {path_output.get("variables_analyzed", [])}
+        - Dependencies analyzed in this iteration: {path_output.get("dependencies_analyzed", [])}
+        
         Your task is to:
         1. Carefully analyze the provided pseudo-code representation
         2. Determine if there's a way to manipulate the variables in the pseudo-code to achieve the goal

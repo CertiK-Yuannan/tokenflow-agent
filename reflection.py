@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict
+from typing import Dict, List
 
 class Reflection:
     def __init__(self, openai_client, memory_manager, model="gpt-4"):
@@ -86,13 +86,6 @@ class Reflection:
         
         Evaluate whether this finding legitimately meets the goal. You must be extremely rigorous and critical.
         
-        Consider:
-        1. Is the vulnerability real, or is it a false positive?
-        2. Does the described attack scenario actually work exactly as described?
-        3. Are all the prerequisites for the attack realistically achievable?
-        4. Would the attacker genuinely profit from this in practice?
-        5. Are there any flaws in the reasoning or overlooked constraints?
-        
         If you identify any issues, explain exactly what's wrong and why the attack wouldn't work as described.
         
         Format your response as a JSON object with:
@@ -101,11 +94,11 @@ class Reflection:
             "evaluation": "detailed evaluation of the finding",
             "critical_flaws": "any critical flaws that invalidate the finding",
             "overlooked_constraints": "any constraints that were overlooked",
-            "variables_to_exclude": ["variable1", "variable2"], 
+            "variables_to_exclude": [], 
             "variables_to_include": ["variable3", "variable4"]
         }}}}
         
-        The variables_to_exclude field should contain variables that are proven to be impossible to manipulate or irrelevant.
+        Only include variables in the variables_to_exclude field if the vulnerability analysis failed.
         The variables_to_include field should contain variables that seem promising for future analysis.
         """
         
@@ -125,8 +118,9 @@ class Reflection:
             "vulnerability_type": action_result.get('vulnerability_type', 'Not specified')
         }
         
-        # Update case memory based on reflection results
-        self._update_case_memory(result)
+        # Update case memory based on reflection results - only if goal not met
+        if not result.get("goal_met", False):
+            self._update_case_memory(result)
         
         # Add this finding to previous findings in case memory
         finding_summary = {
@@ -147,9 +141,9 @@ class Reflection:
         return result
     
     def _update_case_memory(self, reflection_result: Dict) -> None:
-        """Update case-specific memory based on reflection results"""
+        """Update case-specific memory based on reflection results - only called when goal not met"""
         
-        # Update excluded variables
+        # Update excluded variables - only when goal not met
         for var_name in reflection_result.get("variables_to_exclude", []):
             if var_name:  # Ensure we don't add empty variable names
                 self.memory_manager.add_excluded_variable(var_name)

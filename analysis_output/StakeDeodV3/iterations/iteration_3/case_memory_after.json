@@ -45,46 +45,10 @@
       ],
       "result": false,
       "critical_flaws": null
-    },
-    {
-      "iteration": 3,
-      "variables_analyzed": [
-        "users[_userAddress].referalEarning",
-        "depositInfo[*].timePeriodInDays",
-        "depositInfo[*].depositAmount",
-        "stakeReferal"
-      ],
-      "dependencies_analyzed": [
-        "IERC20.safeTransfer",
-        "stakeTokensV3",
-        "IERC20.safeTransferFrom",
-        "checkUserStakedStatus"
-      ],
-      "result": true,
-      "critical_flaws": null
-    },
-    {
-      "iteration": 4,
-      "variables_analyzed": [
-        "depositInfo[*].depositAmount",
-        "users[_userAddress].referalEarning",
-        "depositInfo[*].depositedTimestamp",
-        "depositInfo[*].timePeriodInDays",
-        "stakeReferal"
-      ],
-      "dependencies_analyzed": [
-        "IERC20.safeTransfer",
-        "IERC20.safeTransferFrom",
-        "checkUserStakedStatus",
-        "stakeTokensV3",
-        "availableAmountForClaim"
-      ],
-      "result": true,
-      "critical_flaws": null
     }
   ],
   "meta": {
     "created_at": "2025-03-20T19:53:10.330194",
-    "last_updated": "2025-03-20T19:58:51.173854"
+    "last_updated": "2025-03-20T19:56:41.137791"
   }
 }

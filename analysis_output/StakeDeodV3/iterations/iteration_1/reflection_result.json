@@ -1,20 +1,17 @@
 {
   "goal_met": true,
-  "evaluation": "The finding is legitimate. The referral mechanism in stakeTokensV3 is vulnerable to collusive abuse. An attacker can set up a minimal stake from a master account so that the userStakedStatus flag (or the external check by ICheckStakeUser) passes. Then, when one or more other controlled depositor accounts stake tokens using the master account as the referrer, the contract computes a referral bonus based on the deposit amount (with a bonus rate taken from getReferalBonusFromDays and a divisor of 1000) and credits it directly to the master account\u2019s referral earnings. Since the depositor eventually gets back its entire principal and yield, the bonus is essentially \u201cfree\u201d extra tokens. The bonus calculation itself is flawed because it uses the depositor\u2019s current referralEarning value (which is typically zero) added to the tokenAmount, so the intended bonus is effectively based solely on the tokenAmount, but the logic does not deduct this bonus from any funds. This allows repeated abuse, meeting the goal of identifying a vulnerability in token flow manipulation. All prerequisites \u2013 controlling multiple accounts, having a minimal stake in the master account, and the referral bonus percentage being set to a nontrivial value \u2013 are realistic in many deployment scenarios.",
-  "critical_flaws": "There are no critical logical flaws that would prevent the attack; the vulnerability lies in how referral bonuses are computed and applied. The use of the depositor\u2019s referralEarning in the bonus calculation is questionable, but in practice it does not prevent the abuse since it is initially zero and can further compound over multiple deposits if abused. The attack remains practical even if some administrative or liquidity constraints exist.",
-  "overlooked_constraints": "Potential constraints include the actual bonus percentages set via the getReferalBonusFromDays mapping and possible liquidity limits if many deposits are executed. Additionally, if the ICheckStakeUser implementation were more robust in filtering out collusive behavior or if additional deposit limits were implemented off\u2010chain, such mitigation might reduce the exploit\u2019s profitability. However, these factors do not fully remove the vulnerability.",
-  "variables_to_exclude": [
-    "userDepositCounts",
-    "withdrawnAmount"
-  ],
+  "evaluation": "The audit finding correctly concludes that there is no viable logic vulnerability that lets an attacker manipulate the token flow for profit. The depositAmount is provided by the user and immediately stored as part of the deposit record before transferring tokens via safeTransferFrom. This ensures the recorded deposit amount exactly matches the tokens moved into the contract. The bonus calculations (using releasePercentageFromDays and getReferalBonusFromDays) are directly proportional to the actual deposit values, and the subsequent withdrawal function correctly subtracts previously claimed tokens. Although tokens with fee-on-transfer behavior or admin misconfigurations might introduce other challenges, these do not create an exploitable manipulation that would allow an attacker to extract extra tokens without depositing the corresponding amount.",
+  "critical_flaws": "None identified. The control flow, recording, and arithmetic operations ensure that any attempt to abuse the system would require actual token deposits, and any nonstandard token behavior would affect both the bonus and the actual token flow uniformly.",
+  "overlooked_constraints": "While the analysis did not account for tokens with fee-on-transfer (which could theoretically lead to a difference between transferred and recorded amounts), such behavior would affect overall staking and bonus calculations in a predictable manner rather than producing a net profit by manipulation. Admin parameters are adjustable only by a privileged account, so they do not lower the security of the system for regular users.",
+  "variables_to_exclude": [],
   "variables_to_include": [
-    "users[_userAddress].referalEarning",
-    "userStakedStatus",
+    "depositInfo",
+    "releasePercentageFromDays",
     "getReferalBonusFromDays"
   ],
   "evaluation_metadata": {
     "iteration": 0,
-    "vulnerability_found": true,
-    "vulnerability_type": "collusive referral abuse / economic manipulation"
+    "vulnerability_found": false,
+    "vulnerability_type": ""
   }
 }

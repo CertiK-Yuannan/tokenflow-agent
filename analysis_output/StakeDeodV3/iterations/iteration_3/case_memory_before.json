@@ -17,10 +17,23 @@
       ],
       "result": false,
       "critical_flaws": null
+    },
+    {
+      "iteration": 1,
+      "variables_analyzed": [
+        "depositInfo[*].timePeriodInDays",
+        "depositInfo[*].depositAmount"
+      ],
+      "dependencies_analyzed": [
+        "IERC20.safeTransfer",
+        "stakeTokensV3"
+      ],
+      "result": false,
+      "critical_flaws": null
     }
   ],
   "meta": {
     "created_at": "2025-03-20T19:53:10.330194",
-    "last_updated": "2025-03-20T19:54:54.638251"
+    "last_updated": "2025-03-20T19:55:41.451021"
   }
 }

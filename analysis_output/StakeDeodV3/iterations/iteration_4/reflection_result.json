@@ -1,0 +1,18 @@
+{
+  "goal_met": true,
+  "evaluation": "The finding correctly identifies that the referral bonus is computed entirely as a fraction of the staked amount and credited to the referrer, without requiring a separate deposit from the referrer. An attacker controlling two addresses (one with a minimal stake to qualify as an active staker and another to make a massive deposit while naming the first as referrer) can indeed cause the contract to record a bonus that is not properly 'backed' by an independent deposit from the referrer. When the referrer later calls withdrawTokensV3, the bonus (aggregated from users[_referrer].referalEarning and stakeReferal) is added to any minimal yield from their negligible self-stake. Thus, the contract will allow the withdrawal of an amount which exceeds what the referrer actually staked, effectively extracting extra tokens from the contract pool. The analysis is sound because the attack does not require any exotic conditions: it simply leverages the fact that the referral bonus calculation uses the staker\u2019s deposit amount (and any carried forward bonus) and credits that result, and the contract does not introduce any checks tying that payout to an equivalent backing deposit from the referrer.",
+  "critical_flaws": "None. The bug as described is genuine. The contract logic in stakeTokensV3 and availableAmountForClaim overlooks the possibility of using one address to generate a bonus for another without requiring real backing of funds on the referrer side.",
+  "overlooked_constraints": "The attack scenario assumes that the admin has not set the referral bonus percentages to trivial values. It also assumes that the external call to checkUserStakedStatus reliably returns a positive result for a minimal stake. No additional off\u2010chain or on\u2010chain constraints (like capping of bonus withdrawals or linked deposit tracking) have been implemented, reinforcing this vulnerability. Moreover, since the referral bonus is not time locked by any additional mechanism, it can be withdrawn immediately.",
+  "variables_to_exclude": [],
+  "variables_to_include": [
+    "users[_userAddress].referalEarning",
+    "stakeReferal",
+    "getReferalBonusFromDays",
+    "depositInfo[*].depositAmount"
+  ],
+  "evaluation_metadata": {
+    "iteration": 3,
+    "vulnerability_found": true,
+    "vulnerability_type": "Unbacked Referral Bonus / Inflation Vulnerability"
+  }
+}

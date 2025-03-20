@@ -2,124 +2,145 @@
   "variables": {
     "token": {
       "type": "state",
-      "description": "The ERC20 token contract used for staking, withdrawals, and transfers. It is set in the constructor.",
+      "description": "The ERC20 token contract interface used for transferring tokens in and out of the contract. Set upon deployment.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "Only set at deployment (and never changed thereafter) by privileged accounts; an external attacker cannot change which token is used.",
-      "impact_on_token_flow": "Determines which token is transferred in staking and withdrawal operations."
+      "manipulation_method": "Only set during deployment by the owner and cannot be changed by users.",
+      "impact_on_token_flow": "Determines which token is staked, withdrawn, and transferred."
     },
     "stopped": {
       "type": "state",
-      "description": "A boolean flag that stops withdrawals when true. It is controlled only by the owner.",
+      "description": "A boolean flag that controls whether withdrawals (and remove liquidity) are permitted.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "Only the owner can call removePauseCapability to change this variable.",
-      "impact_on_token_flow": "Prevents withdrawals when true, stopping any token outflow from the contract."
+      "manipulation_method": "Only the owner can change this state via removePauseCapability or pause/unpause functions.",
+      "impact_on_token_flow": "If true, withdrawals are blocked; if false, token flow (withdrawals) may occur."
     },
-    "releasePercentageFromDays": {
-      "type": "state (mapping)",
-      "description": "Maps a staking period (in days) to the monthly release percentage (in per-mille) used to calculate claimable tokens.",
+    "iCheckStakeUser": {
+      "type": "state",
+      "description": "An external dependency (contract address) used to verify if a referrer has staked before awarding referral bonus.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "Only the admin can set this value via setReleasePercentageV3.",
-      "impact_on_token_flow": "Directly affects the monthly amount of tokens that become available for withdrawal from each deposit."
+      "manipulation_method": "Set in the constructor and adjustable only by the owner.",
+      "impact_on_token_flow": "Affects referral bonus calculations which add to the total claimable token amount."
     },
-    "getReferalBonusFromDays": {
-      "type": "state (mapping)",
-      "description": "Maps a staking period (in days) to the yearly referral bonus percentage (in per-mille) used for calculating referral earnings.",
+    "users[_userAddress].referalEarning": {
+      "type": "state",
+      "description": "Accumulated referral bonus earned by a user recorded in their user staking info.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Influenced indirectly by staking actions \u2013 a user\u2019s sponsor receives bonus if referral conditions are met. While a user cannot directly adjust it, they can affect it by controlling their own or their referral\u2019s staking.",
+      "impact_on_token_flow": "Increases the claimable token amount when a user withdraws tokens."
+    },
+    "stakeReferal": {
+      "type": "state",
+      "description": "A mapping holding additional referral bonuses calculated and added to a referrer\u2019s earnings.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Modified internally during stakeTokensV3 based on referral checks; users indirectly affect it by choosing referrers.",
+      "impact_on_token_flow": "Contributes to the final amount available for withdrawal including referral earnings."
+    },
+    "depositInfo[*].depositAmount": {
+      "type": "state (within struct)",
+      "description": "The amount of tokens deposited by the user in each staking deposit.",
+      "manipulation_difficulty": "easy",
+      "manipulation_method": "Directly specified by the user when calling stakeTokensV3; the user chooses how many tokens to stake.",
+      "impact_on_token_flow": "Serves as the base amount from which future bonus accruals (via monthly release percentages) are calculated and affects how many tokens can be withdrawn."
+    },
+    "depositInfo[*].depositedTimestamp": {
+      "type": "state (within struct)",
+      "description": "The timestamp at which the deposit was made, used to calculate elapsed months.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Set automatically using block.timestamp during staking. Although users can initiate the staking transaction, miners have a slight ability to influence block timestamps.",
+      "impact_on_token_flow": "Determines the number of months (and thus maturity) passed, affecting how many tokens become claimable over time."
+    },
+    "depositInfo[*].monthlyPercentage": {
+      "type": "state (within struct)",
+      "description": "The percentage (divided by 1000) that defines how many tokens are released per month; it is looked up via releasePercentageFromDays using the staking period selected.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "Only the admin can modify this via setReferalPercentageFromDaysV3.",
-      "impact_on_token_flow": "Impacts the amount of bonus tokens credited to referrers, thereby affecting total claimable tokens."
+      "manipulation_method": "Set via the admin-only function setReleasePercentageV3 and then assigned during staking. Users cannot adjust this value.",
+      "impact_on_token_flow": "Directly affects the calculation of claimable tokens per month, thereby determining withdrawal amounts."
     },
-    "userDepositIds": {
-      "type": "state (mapping)",
-      "description": "Maps a user address to an array of deposit identifiers that are used to retrieve deposit details.",
-      "manipulation_difficulty": "impossible",
-      "manipulation_method": "Managed internally by the contract during stakeTokensV3; users cannot arbitrarily change this mapping.",
-      "impact_on_token_flow": "Determines which deposits (and thus how much token amounts) are considered when calculating the available claimable tokens."
-    },
-    "depositInfo": {
-      "type": "state (mapping)",
-      "description": "Stores details for each deposit (depositAmount, depositedTimestamp, timePeriodInDays, monthlyPercentage, etc.) created during staking.",
-      "manipulation_difficulty": "mixed",
-      "manipulation_method": "\u2022 depositAmount and timePeriodInDays are directly provided by users during stakeTokensV3 (easy).\n\u2022 depositedTimestamp is set to block.timestamp (users cannot directly set this, though miners have limited influence \u2013 medium).\n\u2022 monthlyPercentage is retrieved from releasePercentageFromDays (impossible for ordinary users).",
-      "impact_on_token_flow": "All these fields are used in availableAmountForClaim to compute how many tokens a user can withdraw, affecting the release schedule and total token flow."
+    "depositInfo[*].timePeriodInDays": {
+      "type": "state (within struct)",
+      "description": "The staking period (in days) chosen by the user at the time of staking.",
+      "manipulation_difficulty": "easy",
+      "manipulation_method": "Directly provided by the user when calling stakeTokensV3.",
+      "impact_on_token_flow": "Determines the maturity threshold (in months) used in withdrawal calculations (i.e. when full deposit plus bonuses become available)."
     },
     "withdrawnAmount": {
       "type": "state (mapping)",
-      "description": "Tracks the cumulative amount of tokens already withdrawn by each user.",
+      "description": "The cumulative amount that a user has already withdrawn, used to subtract from the total claimable amount.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "Updated only by the contract logic in withdrawTokensV3; external users cannot modify this.",
-      "impact_on_token_flow": "Used to subtract previously claimed tokens from the total claimable amount, ensuring withdrawals do not exceed entitlement."
+      "manipulation_method": "Updated only by the contract during withdrawals; users cannot modify this externally.",
+      "impact_on_token_flow": "Prevents users from withdrawing more tokens than they are entitled to by reducing available claimable tokens."
     },
-    "users[_userAddress].referalEarning": {
-      "type": "state (struct field)",
-      "description": "Records referral bonus earnings for a user, accrued when other users stake tokens and use this address as their referrer.",
-      "manipulation_difficulty": "easy",
-      "manipulation_method": "Users indirectly control this when they refer others (and when they stake, specifying a valid referrer they control), but the update logic is enforced by stakeTokensV3.",
-      "impact_on_token_flow": "Increases the amount available to claim during withdrawal by adding referral bonuses."
-    },
-    "stakeReferal": {
+    "getReferalBonusFromDays": {
       "type": "state (mapping)",
-      "description": "Accumulates additional referral bonus amounts, updated internally when staking with a referral.",
-      "manipulation_difficulty": "medium",
-      "manipulation_method": "A user can influence referral earnings by choosing referrers (or by being chosen), but the calculation is fixed by admin\u2010set parameters.",
-      "impact_on_token_flow": "Contributes to total referral earnings factored into a user\u2019s available withdrawal amount."
+      "description": "Admin-defined mapping that sets the referral bonus percentage for different staking periods.",
+      "manipulation_difficulty": "impossible",
+      "manipulation_method": "Only modified via the admin-only function setReferalPercentageFromDaysV3.",
+      "impact_on_token_flow": "Determines the bonus referral amount added to claimable tokens, affecting total withdrawal amounts."
+    },
+    "releasePercentageFromDays": {
+      "type": "state (mapping)",
+      "description": "Admin-defined mapping that determines the monthly release percentage based on the chosen staking period.",
+      "manipulation_difficulty": "impossible",
+      "manipulation_method": "Only adjustable by the admin through setReleasePercentageV3.",
+      "impact_on_token_flow": "Directly influences how many tokens become available each month during the staking maturation process."
     },
     "block.timestamp (used in availableAmountForClaim)": {
-      "type": "global/local",
-      "description": "Provides the current time for calculating the number of months passed since each deposit.",
-      "manipulation_difficulty": "hard",
-      "manipulation_method": "Miners can slightly influence block timestamps within allowed limits.",
-      "impact_on_token_flow": "Impacts the calculation of \u2018numberOfMonths\u2019 for each deposit, thereby affecting the computation of tokens released over time."
+      "type": "global (local in calculation)",
+      "description": "Current block timestamp used to compute the elapsed time since deposit.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Miners have limited ability to adjust block timestamps within protocol-allowed bounds.",
+      "impact_on_token_flow": "Affects the calculation of how many months have passed, thereby influencing the amount of tokens determined as claimable."
     }
   },
   "dependencies": {
     "IERC20.safeTransfer": {
-      "type": "function (library method from SafeERC20)",
-      "description": "Transfers tokens from the contract to a user in a safe manner, checking for success and standard compliance.",
-      "manipulation_difficulty": "impossible",
-      "manipulation_method": "Relies on the well-audited SafeERC20 library; only a flawed ERC20 implementation could undermine it.",
-      "impact_on_token_flow": "Ensures that the correct amount of tokens, as computed by availableAmountForClaim, is transferred to the user during withdrawal."
+      "type": "function (from SafeERC20 library)",
+      "description": "Performs a safe transfer of tokens ensuring that the token contract returns a successful response or reverts.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Relies on the external ERC20 token contract implementation; if the token\u2019s code is non-standard or faulty, transfers might not behave as expected.",
+      "impact_on_token_flow": "Directly moves tokens out of the contract when a user withdraws, making it critical for correct token flow."
+    },
+    "IERC20.safeTransferFrom": {
+      "type": "function (from SafeERC20 library)",
+      "description": "Safely transfers tokens from the user to the contract during staking.",
+      "manipulation_difficulty": "medium",
+      "manipulation_method": "Depends on the ERC20 token\u2019s implementation and approval mechanism; if token logic is flawed, it might affect token deposits.",
+      "impact_on_token_flow": "Critical for ensuring that tokens are properly received into the contract when users stake tokens."
     },
     "availableAmountForClaim": {
       "type": "function",
-      "description": "Calculates the total tokens claimable by a user based on their deposits, referral earnings, elapsed time, and previous withdrawals.",
+      "description": "Calculates the total tokens available for a user to claim based on deposits, elapsed time, monthly release percentages, referral earnings, and already withdrawn amounts.",
       "manipulation_difficulty": "hard",
-      "manipulation_method": "While users provide some input via stakeTokens, the logic here is fixed; only manipulation of deposit parameters (or block.timestamp by miners) can affect its outcome.",
-      "impact_on_token_flow": "Directly determines the amount of tokens transferred during withdrawTokensV3."
+      "manipulation_method": "The function logic is determined by multiple state variables (some user-controlled, some admin-controlled) and relies on block timestamps; a combination of staking multiple deposits or timing withdrawals might allow users to optimize outcomes, but direct manipulation is not trivial.",
+      "impact_on_token_flow": "Determines the exact amount of tokens that will be transferred to the user on withdrawal."
     },
     "stakeTokensV3": {
       "type": "function",
-      "description": "Handles stakes by accepting user deposits, recording deposit details, computing referral bonuses, and transferring tokens from users to the contract.",
+      "description": "Handles user staking by transferring tokens from the user to the contract, recording deposit details, and calculating referral bonuses.",
       "manipulation_difficulty": "easy",
-      "manipulation_method": "Users directly call this function to stake tokens by providing tokenAmount, _referrer, and _days; the values entered directly affect later withdrawals.",
-      "impact_on_token_flow": "Establishes the deposit parameters and referral amounts that later determine claimable tokens in withdrawals."
+      "manipulation_method": "Users control the amount staked and the chosen staking period, which directly impacts the deposit record. However, the referral bonus depends on admin-defined percentages and external user status.",
+      "impact_on_token_flow": "Establishes the fundamental parameters (deposit amount, staking duration, bonus percentages) that later determine the withdrawal amounts."
     },
-    "SafeMath library": {
-      "type": "library",
-      "description": "Provides safe arithmetic functions to prevent overflow or underflow during calculations.",
-      "manipulation_difficulty": "impossible",
-      "manipulation_method": "Integrated into the contract and relying on Solidity 0.8's built\u2010in overflow checks; cannot be externally manipulated.",
-      "impact_on_token_flow": "Ensures that all arithmetic computations (such as token amounts, months elapsed, and percentages) are performed safely, contributing to correct token flow calculations."
-    },
-    "SafeERC20 library": {
-      "type": "library",
-      "description": "Offers wrappers for ERC20 operations (like safeTransfer and safeTransferFrom) to handle non-standard ERC20 implementations.",
-      "manipulation_difficulty": "impossible",
-      "manipulation_method": "Is a trusted, widely used library; only risk comes if the underlying token contract misbehaves.",
-      "impact_on_token_flow": "Guarantees that token transfers (in both staking and withdrawals) are executed correctly and safely."
-    },
-    "ICheckStakeUser interface": {
-      "type": "contract interface",
-      "description": "Provides functions for verifying staking status and retrieving stake addresses, used in referral bonus handling during staking.",
+    "checkUserStakedStatus": {
+      "type": "function",
+      "description": "Verifies if a given referral address is a staker using the external ICheckStakeUser contract.",
       "manipulation_difficulty": "medium",
-      "manipulation_method": "Its behavior depends on the external contract implementation; if the referenced contract is compromised or altered, referral bonus calculations could be affected.",
-      "impact_on_token_flow": "Influences the referral bonus amounts allocated during stakeTokensV3, which then contribute to the available claimable token amount."
+      "manipulation_method": "While the call is external, the iCheckStakeUser contract is set by the owner. If that external dependency is compromised, referral bonus calculations could be affected.",
+      "impact_on_token_flow": "Influences the addition of referral bonuses, thereby indirectly affecting the total claimable token amount."
     },
-    "Modifiers (whenNotPaused, onlyOwner, pauseCapability)": {
-      "type": "modifier",
-      "description": "Restrict function execution based on contract state (paused/not paused), caller privileges (owner or admin), or specific conditions.",
+    "SafeMath library functions": {
+      "type": "library",
+      "description": "Provides arithmetic operations with overflow checks for calculations in the contract.",
       "manipulation_difficulty": "impossible",
-      "manipulation_method": "These modifiers enforce access control and state checks; only the contract owner or admin can alter the necessary state via designated functions.",
-      "impact_on_token_flow": "Ensure that sensitive functions affecting token flow (staking, withdrawing, liquidity removal) are executed only by allowed parties or under appropriate conditions."
+      "manipulation_method": "Compiled into the contract; not directly manipulable at runtime.",
+      "impact_on_token_flow": "Ensures that numerical calculations (such as bonus distributions and monthly accruals) are safe and correct, preserving accurate token flow computations."
+    },
+    "Modifiers (whenNotPaused, pauseCapability, onlyAdmin, onlyOwner)": {
+      "type": "modifier",
+      "description": "Control access and operational state of token staking and withdrawal functions.",
+      "manipulation_difficulty": "impossible",
+      "manipulation_method": "Their logic is built into the contract and only the owner/admin can trigger state changes (like pausing or unpausing).",
+      "impact_on_token_flow": "Restrict or allow token transfers and staking actions based on the contract\u2019s operational state, contributing to secure token flow control."
     }
   }
 }

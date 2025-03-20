@@ -258,7 +258,7 @@ class TokenFlowAnalyzer:
             f.write(f"Analysis tricks count: {len(case_memory.get('analysis_tricks', {}))}\n")
             f.write(f"Previous findings count: {len(case_memory.get('previous_findings', []))}\n\n")
             
-            if report["status"] == "vulnerability_found":
+            if report["status"] == "vulnerability_found" and report["best_finding"] is not None:
                 best = report["best_finding"]
                 f.write("VULNERABILITY FOUND\n")
                 f.write(f"Type: {best['action'].get('vulnerability_type', 'Not specified')}\n")

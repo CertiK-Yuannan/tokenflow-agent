@@ -1,109 +1,106 @@
-# TokenFlow Analyzer
+# TokenFlow Agent
 
-A modular AI agent system for analyzing token flow vulnerabilities in smart contracts. The agent progressively adds complexity to its analysis, gradually incorporating variables and dependencies to find potential vulnerabilities.
+A smart contract security analysis tool specializing in token flow vulnerabilities. The TokenFlow Agent automatically identifies and analyzes potential vulnerabilities in smart contract code that could allow attackers to manipulate token flow for profit.
 
-## Architecture
+## Overview
 
-The TokenFlow Analyzer consists of three main modules:
+This tool uses advanced AI models to progressively analyze smart contract code, focusing on token transfer functions to identify potential security vulnerabilities. It performs an iterative analysis, examining variables and dependencies that impact token flows, generating attack scenarios, and validating whether vulnerabilities exist.
 
-1. **Logic Extractor**: Analyzes the code to understand token flow paths, influential variables, and dependencies. It starts with a simple analysis and progressively adds complexity.
+## Features
 
-2. **Action Generator**: Generates potential attack scenarios based on the extracted logic paths.
+- Automated analysis of smart contract token flow vulnerabilities
+- Progressive, iterative exploration of variables and dependencies
+- Detection of manipulation points in token-related functions
+- Detailed attack scenario generation with profit mechanisms
+- Comprehensive reporting with evaluation of vulnerability severity
+- Memory management for case-specific and global analysis knowledge
 
-3. **Reflection**: Evaluates the findings, determining if a vulnerability has been found, and provides feedback for the next iteration.
+## Requirements
 
-These modules work together in an iterative process, starting with simple token flow analysis and gradually incorporating more context until a vulnerability is found or all possibilities are exhausted.
+- Python 3.8+
+- OpenAI API key
+- Required Python packages (see `requirements.txt`)
 
-## Directory Structure
-tokenflow-agent/
-│
-├── analyzer.py                 # Main controller and entry point
-├── action_generator.py         # Action generator module
-├── logic_extractor.py          # Logic extractor module
-├── reflection.py               # Reflection module
-├── setup.py                    # Directory structure setup script
-│
-├── test/                       # Directory for test Solidity contracts
-│   └── StakeDeodV3.sol         # Example contract
-│
-└── analysis_output/            # Analysis outputs organized by contract
-└── [ContractName]/         # Subdirectory for each analyzed contract
-├── preprocessing/      # Preprocessing results
-├── iterations/         # Results from each iteration
-└── final/              # Final reports
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.7 or higher
-- An OpenAI API key
-
-### Installation
+## Installation
 
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/tokenflow-agent.git
 cd tokenflow-agent
 ```
-2. Install the required packages:
+
+2. Install dependencies:
 ```bash
-bashCopypip install openai python-dotenv
+pip install -r requirements.txt
 ```
 
-
-3. Create a .env file with your OpenAI API key:
-```bash
-echo "OPENAI_API_KEY=your-openai-api-key" > .env
-echo "OPENAI_MODEL=gpt-4" >> .env
-echo "MAX_ITERATIONS=5" >> .env
+3. Set up environment variables:
+Create a `.env` file in the project root directory with your OpenAI API key:
+```
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o  # or another appropriate model
 ```
 
-### Usage
+## Usage
 
-1. Place your Solidity contract in the test directory.
-2. Run the analysis:
+Run the analyzer on a smart contract file:
+
 ```bash
-python analyzer.py test/YourContract.sol
+python analyzer.py path/to/your/contract.sol
 ```
-3. Check the results in the `analysis_output/YourContract/` directory.
 
-Configuration
-You can configure the agent through the .env file:
+Optional environment variables that can be set in the `.env` file:
+- `TARGET_FUNCTION`: The specific function to analyze (default: "withdrawTokensV3")
+- `TARGET_TOKEN_TRANSFER`: The token transfer code to focus on 
+- `MAX_ITERATIONS`: Maximum number of analysis iterations (default: 5)
+- `GLOBAL_MEMORY_FILE`: Path to the global memory file (default: "global_memory.json")
 
-OPENAI_API_KEY: Your OpenAI API key
-OPENAI_MODEL: The model to use (default: "o3-mini")
-MAX_ITERATIONS: Maximum number of iterations (default: 5)
+## Output
 
-## How It Works
+The tool generates a detailed analysis in the `analysis_output` directory, organized as follows:
 
-1. The Logic Extractor module first preprocesses the contract to identify:
-    - The overall token flow
-    - Variables that affect token amounts
-    - Dependencies that the token flow relies on
-2. The analysis proceeds through multiple iterations:
-    - Iteration 0: Analyzes only the direct token transfer flow
-    - Iteration 1: Adds high-risk variables and dependencies
-    - Iteration 2: Adds medium-risk variables and dependencies
-    - Later iterations: Considers all variables and dependencies
-3. For each iteration, the Action Generator proposes possible vulnerabilities, which the Reflection module evaluates.
-4. The process continues until either:
-    - A legitimate vulnerability is found
-    - The maximum number of iterations is reached
+- `analysis_output/[contract_name]/preprocessing`: Initial variable and dependency analysis
+- `analysis_output/[contract_name]/iterations`: Results from each analysis iteration
+- `analysis_output/[contract_name]/final`: Final report with vulnerability details
 
-## Example Output
+The final report includes:
+- Vulnerability details (if found)
+- Attack scenarios
+- Profit mechanisms
+- Exploit sequences
+- Comprehensive explanation of the vulnerability
 
-The analysis generates comprehensive output files:
+## Core Components
 
-- `preprocessing_results.json`: Initial analysis of the contract
-- `iterations/iteration_X/`: Results for each iteration
-- `final/final_report.json`: Comprehensive final report
-- `final/final_report_summary.txt`: Human-readable summary
+### 1. TokenFlowAnalyzer (`analyzer.py`)
+Orchestrates the entire analysis process, managing the iterative exploration of smart contract code.
 
-## Extending the System
+### 2. LogicExtractor (`logic_extractor.py`)
+Analyzes the smart contract code to identify variables and dependencies that affect token flow, categorizing them by manipulation difficulty.
 
-The modular architecture makes it easy to extend the system:
+### 3. ActionGenerator (`action_generator.py`)
+Generates potential attack scenarios based on code representations, determining if vulnerabilities exist and how they could be exploited.
 
-- To change the analysis logic, modify the `logic_extractor.py` file
-- To change how attack scenarios are generated, modify `action_generator.py`
-- To change the evaluation criteria, modify `reflection.py`
+### 4. Reflection (`reflection.py`)
+Evaluates the findings from the ActionGenerator, determining if they truly represent vulnerabilities and providing feedback for future iterations.
+
+### 5. MemoryManager (`memory_manager.py`)
+Manages both global and case-specific memory, maintaining knowledge across analysis sessions and tracking discoveries.
+
+## Example
+
+Analyzing a contract with potential reentrancy vulnerability:
+
+```bash
+python analyzer.py contracts/VulnerableStaking.sol
+```
+
+This will analyze the contract, focusing on token flow manipulation in the withdrawal functions, and generate a detailed report of any found vulnerabilities.
+
+## License
+
+[Your License Info Here]
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
