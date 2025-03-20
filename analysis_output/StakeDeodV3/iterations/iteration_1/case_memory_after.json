@@ -1,0 +1,33 @@
+{
+  "excluded_variables": [
+    "userDepositCounts",
+    "withdrawnAmount"
+  ],
+  "included_variables": [
+    "users[_userAddress].referalEarning",
+    "userStakedStatus",
+    "getReferalBonusFromDays"
+  ],
+  "analysis_tricks": {},
+  "code_context": {
+    "variables_count": 10,
+    "dependencies_count": 7
+  },
+  "previous_findings": [
+    {
+      "iteration": 0,
+      "variables_analyzed": [
+        "users[_userAddress].referalEarning"
+      ],
+      "dependencies_analyzed": [
+        "stakeTokensV3"
+      ],
+      "result": true,
+      "critical_flaws": null
+    }
+  ],
+  "meta": {
+    "created_at": "2025-03-20T19:07:43.690172",
+    "last_updated": "2025-03-20T19:09:16.675343"
+  }
+}

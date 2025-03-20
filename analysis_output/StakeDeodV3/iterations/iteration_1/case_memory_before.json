@@ -1,0 +1,14 @@
+{
+  "excluded_variables": [],
+  "included_variables": [],
+  "analysis_tricks": {},
+  "code_context": {
+    "variables_count": 10,
+    "dependencies_count": 7
+  },
+  "previous_findings": [],
+  "meta": {
+    "created_at": "2025-03-20T19:07:43.690172",
+    "last_updated": "2025-03-20T19:08:15.935867"
+  }
+}

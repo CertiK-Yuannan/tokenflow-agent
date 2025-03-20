@@ -125,7 +125,7 @@ class TokenFlowAnalyzer:
                 print("Goal met! Analysis complete.")
                 final_report = self._generate_final_report(contract_name, goal, "vulnerability_found")
                 self._save_final_report(final_report, final_dir)
-                return final_report
+                # return final_report
             
             # Print suggestions for next iteration
             if i < self.max_iterations - 1:
@@ -228,6 +228,9 @@ class TokenFlowAnalyzer:
     
     def _save_final_report(self, report: Dict, output_dir: str):
         """Save the final report to a file"""
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
         with open(os.path.join(output_dir, "final_report.json"), "w") as f:
             json.dump(report, f, indent=2)
         

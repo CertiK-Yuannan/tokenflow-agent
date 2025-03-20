@@ -23,11 +23,12 @@ class MemoryManager:
         self.global_memory_file_path = global_memory_file_path
         self.case_output_dir = case_output_dir
         
+        # Setup logging first to avoid AttributeError
+        self._setup_logging()
+        
         # Initialize both memory types
         self.global_memory = self._load_global_memory()
         self.case_memory = self._initialize_case_memory()
-        
-        self._setup_logging()
     
     def _setup_logging(self):
         """Setup logging for the memory manager"""
@@ -44,13 +45,21 @@ class MemoryManager:
         if os.path.exists(self.global_memory_file_path):
             try:
                 with open(self.global_memory_file_path, "r") as f:
-                    return json.load(f)
+                    content = f.read().strip()
+                    if not content:  # File exists but is empty
+                        return self._get_empty_global_memory()
+                    return json.loads(content)
             except json.JSONDecodeError:
                 self.logger.warning(f"Error loading global memory file {self.global_memory_file_path}. Using empty structure.")
                 return self._get_empty_global_memory()
         else:
             self.logger.info(f"Global memory file {self.global_memory_file_path} not found. Using empty structure.")
-            return self._get_empty_global_memory()
+            # Create the empty global memory file
+            empty_memory = self._get_empty_global_memory()
+            os.makedirs(os.path.dirname(self.global_memory_file_path), exist_ok=True)
+            with open(self.global_memory_file_path, "w") as f:
+                json.dump(empty_memory, f, indent=2)
+            return empty_memory
     
     def _get_empty_global_memory(self) -> Dict:
         """Return an empty global memory structure"""
@@ -103,6 +112,8 @@ class MemoryManager:
         memory_to_save["meta"]["last_updated"] = datetime.now().isoformat()
         
         memory_file_path = os.path.join(self.case_output_dir, "case_memory.json")
+        
+        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(memory_file_path), exist_ok=True)
         
         with open(memory_file_path, "w") as f:
@@ -114,7 +125,9 @@ class MemoryManager:
         """Save global memory to file - used only when explicitly updating global knowledge"""
         self.global_memory["meta"]["last_updated"] = datetime.now().isoformat()
         
+        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(self.global_memory_file_path), exist_ok=True)
+        
         with open(self.global_memory_file_path, "w") as f:
             json.dump(self.global_memory, f, indent=2)
         
@@ -182,7 +195,7 @@ class MemoryManager:
         if "excluded_variables" not in self.case_memory:
             self.case_memory["excluded_variables"] = []
         
-        if variable_name not in self.case_memory["excluded_variables"]:
+        if variable_name and variable_name not in self.case_memory["excluded_variables"]:
             self.case_memory["excluded_variables"].append(variable_name)
             self._save_case_memory()
             self.logger.info(f"Added variable to excluded list: {variable_name}")
@@ -192,7 +205,7 @@ class MemoryManager:
         if "included_variables" not in self.case_memory:
             self.case_memory["included_variables"] = []
         
-        if variable_name not in self.case_memory["included_variables"]:
+        if variable_name and variable_name not in self.case_memory["included_variables"]:
             self.case_memory["included_variables"].append(variable_name)
             self._save_case_memory()
             self.logger.info(f"Added variable to included list: {variable_name}")

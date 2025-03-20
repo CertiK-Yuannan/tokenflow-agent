@@ -9,6 +9,24 @@ class LogicExtractor:
         self.memory_manager = memory_manager
         self.analysis_results = {}
     
+    def _parse_json_response(self, response_text):
+        """Helper method to parse JSON from response text with error handling"""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # If the response isn't valid JSON, try to extract JSON from the text
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = response_text[start_idx:end_idx]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    # If still not valid, create a basic structure
+                    return {"variables": {}, "dependencies": {}}
+            else:
+                return {"variables": {}, "dependencies": {}}
+    
     def preprocess_code(self, code: str, target_description: str, output_path: str = None) -> Dict:
         """Initial preprocessing of code to identify variables and dependencies that affect token flow"""
         
@@ -71,21 +89,8 @@ class LogicExtractor:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
-        try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError:
-            content = response.choices[0].message.content
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
-                try:
-                    result = json.loads(json_str)
-                except json.JSONDecodeError:
-                    result = {"variables": {}, "dependencies": {}}
-            else:
-                result = {"variables": {}, "dependencies": {}}
+        # Parse the JSON from the response text using the helper method
+        result = self._parse_json_response(response.choices[0].message.content)
                 
         self.analysis_results = result
         

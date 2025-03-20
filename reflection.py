@@ -1,12 +1,46 @@
 import json
 import os
-from typing import Dict, List
+from typing import Dict
 
 class Reflection:
     def __init__(self, openai_client, memory_manager, model="gpt-4"):
         self.client = openai_client
         self.model = model
         self.memory_manager = memory_manager
+    
+    def _parse_json_response(self, response_text):
+        """Helper method to parse JSON from response text with error handling"""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # If the response isn't valid JSON, try to extract JSON from the text
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = response_text[start_idx:end_idx]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    # If still not valid, create a basic structure
+                    return {
+                        "goal_met": False,
+                        "evaluation": "Error in parsing response",
+                        "critical_flaws": "Error in parsing response",
+                        "overlooked_constraints": "Error in parsing response",
+                        "variables_to_exclude": [],
+                        "variables_to_include": [],
+                        "raw_response": response_text
+                    }
+            else:
+                return {
+                    "goal_met": False,
+                    "evaluation": "Error in parsing response",
+                    "critical_flaws": "Error in parsing response",
+                    "overlooked_constraints": "Error in parsing response",
+                    "variables_to_exclude": [],
+                    "variables_to_include": [],
+                    "raw_response": response_text
+                }
     
     def evaluate_result(self, code: str, path_output: Dict, action_result: Dict, goal: str, iteration: int, output_path: str = None) -> Dict:
         """
@@ -62,14 +96,14 @@ class Reflection:
         If you identify any issues, explain exactly what's wrong and why the attack wouldn't work as described.
         
         Format your response as a JSON object with:
-        {{
+        {{{{
             "goal_met": true/false,
             "evaluation": "detailed evaluation of the finding",
             "critical_flaws": "any critical flaws that invalidate the finding",
             "overlooked_constraints": "any constraints that were overlooked",
             "variables_to_exclude": ["variable1", "variable2"], 
             "variables_to_include": ["variable3", "variable4"]
-        }}
+        }}}}
         
         The variables_to_exclude field should contain variables that are proven to be impossible to manipulate or irrelevant.
         The variables_to_include field should contain variables that seem promising for future analysis.
@@ -81,40 +115,8 @@ class Reflection:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
-        try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
-            content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
-                try:
-                    result = json.loads(json_str)
-                except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
-                    result = {
-                        "goal_met": False,
-                        "evaluation": "Error in parsing response",
-                        "critical_flaws": "Error in parsing response",
-                        "overlooked_constraints": "Error in parsing response",
-                        "variables_to_exclude": [],
-                        "variables_to_include": [],
-                        "raw_response": content
-                    }
-            else:
-                result = {
-                    "goal_met": False,
-                    "evaluation": "Error in parsing response",
-                    "critical_flaws": "Error in parsing response",
-                    "overlooked_constraints": "Error in parsing response",
-                    "variables_to_exclude": [],
-                    "variables_to_include": [],
-                    "raw_response": content
-                }
+        # Parse the JSON from the response text using the helper method
+        result = self._parse_json_response(response.choices[0].message.content)
         
         # Add metadata about the evaluation
         result["evaluation_metadata"] = {
@@ -149,8 +151,10 @@ class Reflection:
         
         # Update excluded variables
         for var_name in reflection_result.get("variables_to_exclude", []):
-            self.memory_manager.add_excluded_variable(var_name)
+            if var_name:  # Ensure we don't add empty variable names
+                self.memory_manager.add_excluded_variable(var_name)
         
         # Update included variables
         for var_name in reflection_result.get("variables_to_include", []):
-            self.memory_manager.add_included_variable(var_name)
+            if var_name:  # Ensure we don't add empty variable names
+                self.memory_manager.add_included_variable(var_name)

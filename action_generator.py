@@ -8,6 +8,50 @@ class ActionGenerator:
         self.model = model
         self.memory_manager = memory_manager
     
+    def _parse_json_response(self, response_text):
+        """Helper method to parse JSON from response text with error handling"""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # If the response isn't valid JSON, try to extract JSON from the text
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = response_text[start_idx:end_idx]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    # If still not valid, create a basic structure
+                    return {
+                        "vulnerability_found": False,
+                        "vulnerability_type": "Error in parsing response",
+                        "attack_scenario": "Error in parsing response",
+                        "exploit_code": "Error in parsing response",
+                        "profit_mechanism": "Error in parsing response",
+                        "attack_prerequisites": "Error in parsing response",
+                        "attack_limitations": "Error in parsing response",
+                        "edge_cases": "Error in parsing response",
+                        "confidence": "low",
+                        "reasons_if_not_feasible": "Error in parsing response",
+                        "reasoning": "Error in parsing response",
+                        "raw_response": response_text
+                    }
+            else:
+                return {
+                    "vulnerability_found": False,
+                    "vulnerability_type": "Error in parsing response",
+                    "attack_scenario": "Error in parsing response",
+                    "exploit_code": "Error in parsing response",
+                    "profit_mechanism": "Error in parsing response",
+                    "attack_prerequisites": "Error in parsing response",
+                    "attack_limitations": "Error in parsing response",
+                    "edge_cases": "Error in parsing response",
+                    "confidence": "low",
+                    "reasons_if_not_feasible": "Error in parsing response",
+                    "reasoning": "Error in parsing response",
+                    "raw_response": response_text
+                }
+    
     def generate_action(self, code: str, path_output: Dict, goal: str, iteration: int, output_path: str = None) -> Dict:
         """
         Generate an action based solely on the code representation from LogicExtractor.
@@ -32,6 +76,7 @@ class ActionGenerator:
         # Extract code representation from path_output - this is the key input
         code_representation = path_output.get("code_representation", "")
         
+        # Note: Escaped curly braces in the f-string for JSON template
         prompt = f"""
         You are an expert smart contract auditor validating a potential vulnerability.
         
@@ -52,7 +97,7 @@ class ActionGenerator:
         Be extremely rigorous in your analysis. The attack is only valid if all steps are feasible AND result in profit.
         
         Format your response as a JSON object with:
-        {
+        {{{{
             "vulnerability_found": true/false,
             "vulnerability_type": "type of vulnerability if found",
             "attack_scenario": "detailed description of the attack scenario",
@@ -64,7 +109,7 @@ class ActionGenerator:
             "confidence": "high/medium/low confidence in this finding",
             "reasons_if_not_feasible": "detailed explanation of why the attack is not feasible if applicable",
             "reasoning": "your detailed step-by-step reasoning"
-        }
+        }}}}
         
         If you determine the attack is not feasible, clearly explain why at each step where it fails.
         """
@@ -75,50 +120,8 @@ class ActionGenerator:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
-        try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
-            content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
-                try:
-                    result = json.loads(json_str)
-                except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
-                    result = {
-                        "vulnerability_found": False,
-                        "vulnerability_type": "Error in parsing response",
-                        "attack_scenario": "Error in parsing response",
-                        "exploit_code": "Error in parsing response",
-                        "profit_mechanism": "Error in parsing response",
-                        "attack_prerequisites": "Error in parsing response",
-                        "attack_limitations": "Error in parsing response",
-                        "edge_cases": "Error in parsing response",
-                        "confidence": "low",
-                        "reasons_if_not_feasible": "Error in parsing response",
-                        "reasoning": "Error in parsing response",
-                        "raw_response": content
-                    }
-            else:
-                result = {
-                    "vulnerability_found": False,
-                    "vulnerability_type": "Error in parsing response",
-                    "attack_scenario": "Error in parsing response",
-                    "exploit_code": "Error in parsing response",
-                    "profit_mechanism": "Error in parsing response",
-                    "attack_prerequisites": "Error in parsing response",
-                    "attack_limitations": "Error in parsing response",
-                    "edge_cases": "Error in parsing response",
-                    "confidence": "low",
-                    "reasons_if_not_feasible": "Error in parsing response",
-                    "reasoning": "Error in parsing response",
-                    "raw_response": content
-                }
+        # Parse the JSON from the response text using the helper method
+        result = self._parse_json_response(response.choices[0].message.content)
         
         # Add metadata about the analysis
         result["analysis_metadata"] = {
