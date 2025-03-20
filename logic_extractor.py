@@ -1,34 +1,22 @@
 import json
 import os
-from typing import Dict
+from typing import Dict, List, Set
 
 class LogicExtractor:
-    def __init__(self, openai_client, model="gpt-4"):
+    def __init__(self, openai_client, memory_manager, model="gpt-4"):
         self.client = openai_client
         self.model = model
+        self.memory_manager = memory_manager
         self.analysis_results = {}
-        
+    
     def preprocess_code(self, code: str, target_description: str, output_path: str = None) -> Dict:
-        """Initial preprocessing of code to understand token flow, variables, and dependencies"""
+        """Initial preprocessing of code to identify variables and dependencies that affect token flow"""
         
-        # Get assumptions from environment variables with defaults
-        privileged_vars = os.environ.get(
-            "ASSUMPTION_PRIVILEGED_VARS", 
-            "Variables or external dependencies controlled by privileged accounts are impossible to manipulate"
-        )
-        
-        user_controlled_vars = os.environ.get(
-            "ASSUMPTION_USER_CONTROLLED_VARS", 
-            "User-controllable variables should be considered easy to manipulate"
-        )
-        
-        manipulation_hierarchy = os.environ.get(
-            "ASSUMPTION_MANIPULATION_HIERARCHY", 
-            "Variables should be categorized by manipulation difficulty (easy, medium, hard, impossible)"
-        )
+        # Get assumptions from global memory
+        assumptions = self.memory_manager.get_global_assumptions("logic_extractor")
         
         prompt = f"""
-        You are analyzing a smart contract for potential vulnerabilities in token flow.
+        You are analyzing a smart contract to identify variables and dependencies that affect token flow.
         
         Please analyze the following code, focusing on the described target functionality:
         
@@ -40,25 +28,20 @@ class LogicExtractor:
         ```
         
         ANALYSIS ASSUMPTIONS:
-        1. {privileged_vars}
-        2. {user_controlled_vars}
-        3. {manipulation_hierarchy}
+        {json.dumps(assumptions, indent=2)}
         
         Provide the following analysis:
         
-        1. Describe the overall token flow in the target functionality.
-        
-        2. Identify all variables (both state and local) that affect token flow amounts, and categorize them based on manipulation difficulty:
+        1. Identify all variables (both state and local) that affect token flow amounts, and categorize them based on manipulation difficulty:
            - easy: Variables directly controllable by users
            - medium: Variables indirectly controllable with some prerequisites
            - hard: Variables that require complex prerequisites or exploits to manipulate
            - impossible: Variables controlled by privileged accounts or set in constructor
         
-        3. Identify all dependencies (functions, modifiers, imported contracts) that the token flow relies on, and categorize them based on risk of error or manipulation using the same scale.
+        2. Identify all dependencies (functions, modifiers, imported contracts) that the token flow relies on, and categorize them based on risk of error or manipulation using the same scale.
         
         Format your response as a JSON object with:
         {{
-            "token_flow_description": "detailed description of the token flow",
             "variables": {{
                 "variable_name1": {{
                     "type": "state/local", 
@@ -79,7 +62,7 @@ class LogicExtractor:
             }}
         }}
         
-        Include only variables and dependencies that actually impact the token flow amount.
+        Include only variables and dependencies that directly impact token flow amounts.
         """
         
         # Call the API
@@ -88,36 +71,31 @@ class LogicExtractor:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON response
+        # Parse the JSON from the response text
         try:
             result = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError:
-            # Extract JSON from text if not valid JSON
             content = response.choices[0].message.content
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
-            
             if start_idx >= 0 and end_idx > start_idx:
+                json_str = content[start_idx:end_idx]
                 try:
-                    result = json.loads(content[start_idx:end_idx])
+                    result = json.loads(json_str)
                 except json.JSONDecodeError:
-                    result = {
-                        "token_flow_description": "Error parsing response",
-                        "variables": {},
-                        "dependencies": {},
-                        "raw_response": content
-                    }
+                    result = {"variables": {}, "dependencies": {}}
             else:
-                result = {
-                    "token_flow_description": "Error parsing response",
-                    "variables": {},
-                    "dependencies": {},
-                    "raw_response": content
-                }
+                result = {"variables": {}, "dependencies": {}}
                 
         self.analysis_results = result
         
-        # Save results if path provided
+        # Save to case memory
+        self.memory_manager.update_code_context({
+            "variables_count": len(result.get("variables", {})),
+            "dependencies_count": len(result.get("dependencies", {}))
+        })
+        
+        # Save the preprocessing results to a file if output_path is provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:
@@ -125,88 +103,105 @@ class LogicExtractor:
             
         return result
     
-    def generate_path(self, code: str, path_context: Dict, iteration: int, output_path: str = None) -> Dict:
-        """Generate a code path for analysis based on current iteration and previous findings"""
-        
-        # Define difficulty levels
+    def generate_path(self, code: str, iteration: int, output_path: str = None) -> Dict:
+        """
+        Generate structured code representation for a specific analysis path.
+        Each iteration adds one variable/dependency to the analysis, starting from easiest to hardest.
+        """
+        # Get difficulty levels
         difficulty_levels = ["easy", "medium", "hard", "impossible"]
         
-        # Filter variables and dependencies based on iteration
-        excluded_vars = set(path_context.get("excluded_variables", []))
+        # Get excluded and included variables from case memory
+        excluded_variables = self.memory_manager.get_excluded_variables()
+        included_variables = self.memory_manager.get_included_variables()
+        previous_findings = self.memory_manager.get_previous_findings()
         
-        if iteration == 0:
-            # First iteration - focus only on easy to manipulate items
-            context = "Analyze only variables and dependencies that are easy to manipulate."
-            current_difficulty = difficulty_levels[0]
-        elif iteration == 1:
-            # Second iteration - add medium difficulty manipulations
-            context = "Analyze variables and dependencies with medium manipulation difficulty."
-            current_difficulty = difficulty_levels[1]
-        elif iteration == 2:
-            # Third iteration - add hard difficulty manipulations
-            context = "Analyze variables and dependencies that are hard to manipulate."
-            current_difficulty = difficulty_levels[2]
-        else:
-            # Later iterations - try combinations of variables and dependencies
-            context = "Analyze combinations of variables and dependencies from different difficulty levels."
-            current_difficulty = "combinations"
+        # Determine what to analyze in this iteration
+        current_variables = set()
+        current_dependencies = set()
         
-        # Filter variables by difficulty and exclusion list
-        if current_difficulty != "combinations":
-            variables_to_consider = {
-                var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") == current_difficulty and var_name not in excluded_vars
-            }
+        # Add variables from previous iterations to current set
+        if iteration > 0 and previous_findings:
+            for finding in previous_findings:
+                if "variables_analyzed" in finding:
+                    current_variables.update(finding["variables_analyzed"])
+                if "dependencies_analyzed" in finding:
+                    current_dependencies.update(finding["dependencies_analyzed"])
+        
+        # Add one new variable and one new dependency for this iteration, prioritizing by difficulty
+        # Start with explicitly included variables
+        new_variable_added = False
+        for var_name in included_variables:
+            if var_name in self.analysis_results.get("variables", {}) and var_name not in current_variables and var_name not in excluded_variables:
+                current_variables.add(var_name)
+                new_variable_added = True
+                break
+                
+        # If no included variable was added, add by difficulty level
+        if not new_variable_added:
+            for difficulty in difficulty_levels:
+                if difficulty == "impossible":
+                    continue  # Skip impossible variables
+                
+                for var_name, var_info in self.analysis_results.get("variables", {}).items():
+                    if (var_info.get("manipulation_difficulty") == difficulty and 
+                        var_name not in current_variables and 
+                        var_name not in excluded_variables):
+                        current_variables.add(var_name)
+                        new_variable_added = True
+                        break
+                
+                if new_variable_added:
+                    break
+        
+        # Add one new dependency, prioritizing by difficulty level
+        new_dependency_added = False
+        for difficulty in difficulty_levels:
+            if difficulty == "impossible":
+                continue  # Skip impossible dependencies
+                
+            for dep_name, dep_info in self.analysis_results.get("dependencies", {}).items():
+                if (dep_info.get("manipulation_difficulty") == difficulty and 
+                    dep_name not in current_dependencies):
+                    current_dependencies.add(dep_name)
+                    new_dependency_added = True
+                    break
             
-            deps_to_consider = {
-                dep_code: dep_info for dep_code, dep_info in self.analysis_results.get("dependencies", {}).items()
-                if dep_info.get("manipulation_difficulty") == current_difficulty
-            }
-        else:
-            # Consider all non-impossible and non-excluded variables/dependencies
-            variables_to_consider = {
-                var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") != "impossible" and var_name not in excluded_vars
-            }
-            
-            deps_to_consider = {
-                dep_code: dep_info for dep_code, dep_info in self.analysis_results.get("dependencies", {}).items()
-                if dep_info.get("manipulation_difficulty") != "impossible"
-            }
+            if new_dependency_added:
+                break
         
-        # Generate the specific path to analyze
+        # Create dictionaries of variables and dependencies to consider
+        variables_to_consider = {
+            var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
+            if var_name in current_variables
+        }
+        
+        deps_to_consider = {
+            dep_name: dep_info for dep_name, dep_info in self.analysis_results.get("dependencies", {}).items()
+            if dep_name in current_dependencies
+        }
+        
+        # Generate the code representation for this path
         prompt = f"""
-        You are analyzing a smart contract for potential vulnerabilities in token flow.
+        You are generating a structured code representation for smart contract analysis.
         
         CODE:
         ```solidity
         {code}
         ```
         
-        TOKEN FLOW DESCRIPTION:
-        {self.analysis_results.get('token_flow_description', 'No description available')}
+        Variables to analyze in this iteration:
+        {json.dumps(variables_to_consider, indent=2)}
         
-        CONTEXT FOR THIS ANALYSIS: {context}
+        Dependencies to analyze in this iteration:
+        {json.dumps(deps_to_consider, indent=2)}
         
-        Variables to consider:
-        {json.dumps(variables_to_consider) if variables_to_consider else "None"}
+        Excluded variables (do not consider these):
+        {json.dumps(excluded_variables)}
         
-        Dependencies to consider:
-        {json.dumps(deps_to_consider) if deps_to_consider else "None"}
+        Your task is to generate a pseudo-code representation that shows how the specified variables and dependencies interact in the token flow. The code should focus on:
         
-        Previous findings:
-        {json.dumps(path_context.get('previous_findings', [])) if path_context.get('previous_findings') else "None"}
-        
-        Based on the token flow description and the variables/dependencies to consider in this iteration, identify the most promising code path for finding vulnerabilities.
-        
-        Format your response as a JSON object with:
-        {{
-            "code_path": "relevant code snippets that represent the token flow path",
-            "analysis_focus": "what specific variables or dependencies should be manipulated in this path",
-            "manipulation_strategy": "detailed explanation of how to manipulate these variables/dependencies",
-            "expected_impact": "expected impact on token flow if manipulation is successful",
-            "assumptions": "any assumptions being made in this iteration"
-        }}
+        1. The normal execution path of the contract involving these variables and dependencies.
         """
         
         # Call the API
@@ -215,47 +210,42 @@ class LogicExtractor:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON response
-        try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError:
-            # Extract JSON from text if not valid JSON
-            content = response.choices[0].message.content
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            
-            if start_idx >= 0 and end_idx > start_idx:
-                try:
-                    result = json.loads(content[start_idx:end_idx])
-                except json.JSONDecodeError:
-                    result = {
-                        "code_path": "Error parsing response",
-                        "analysis_focus": "Error in parsing",
-                        "manipulation_strategy": "Error in parsing",
-                        "expected_impact": "Error in parsing",
-                        "assumptions": "Error in parsing",
-                        "raw_response": content
-                    }
-            else:
-                result = {
-                    "code_path": "Error parsing response",
-                    "analysis_focus": "Error in parsing",
-                    "manipulation_strategy": "Error in parsing",
-                    "expected_impact": "Error in parsing",
-                    "assumptions": "Error in parsing",
-                    "raw_response": content
-                }
+        # Extract the code from the response
+        content = response.choices[0].message.content
         
-        # Add metadata about the current iteration
-        result["iteration_info"] = {
-            "iteration": iteration,
-            "context": context,
-            "difficulty_level": current_difficulty,
-            "variables_considered": list(variables_to_consider.keys()),
-            "dependencies_considered": list(deps_to_consider.keys())
+        # Try to extract code block if present
+        code_block = ""
+        if "```" in content:
+            start = content.find("```") + 3
+            end = content.rfind("```")
+            
+            # Skip language identifier if present
+            if start < len(content) and content[start] != '\n':
+                line_end = content.find('\n', start)
+                if line_end > start:
+                    start = line_end + 1
+            
+            if end > start:
+                code_block = content[start:end].strip()
+        else:
+            code_block = content.strip()
+        
+        # Prepare the result
+        result = {
+            "analysis_focus": f"Iteration {iteration+1}: Analysis of {len(current_variables)} variables and {len(current_dependencies)} dependencies",
+            "code_representation": code_block,
+            "variables_analyzed": list(current_variables),
+            "dependencies_analyzed": list(current_dependencies),
+            "iteration_info": {
+                "iteration": iteration,
+                "new_variable_added": new_variable_added,
+                "new_dependency_added": new_dependency_added,
+                "variables_count": len(current_variables),
+                "dependencies_count": len(current_dependencies)
+            }
         }
         
-        # Save results if path provided
+        # Save the path generation results to a file if output_path is provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:
