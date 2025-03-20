@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Dict
 
 class LogicExtractor:
     def __init__(self, openai_client, model="gpt-4"):
@@ -11,20 +11,20 @@ class LogicExtractor:
     def preprocess_code(self, code: str, target_description: str, output_path: str = None) -> Dict:
         """Initial preprocessing of code to understand token flow, variables, and dependencies"""
         
-        # Get assumptions from environment variables or use defaults
-        privileged_vars_assumption = os.environ.get(
+        # Get assumptions from environment variables with defaults
+        privileged_vars = os.environ.get(
             "ASSUMPTION_PRIVILEGED_VARS", 
-            "Variables or external dependencies controlled/configured by a privileged account or set in the constructor should be considered impossible to manipulate"
+            "Variables or external dependencies controlled by privileged accounts are impossible to manipulate"
         )
         
-        user_controlled_vars_assumption = os.environ.get(
+        user_controlled_vars = os.environ.get(
             "ASSUMPTION_USER_CONTROLLED_VARS", 
-            "Variables or external dependencies that users can directly control or update should be considered very easy to manipulate"
+            "User-controllable variables should be considered easy to manipulate"
         )
         
         manipulation_hierarchy = os.environ.get(
             "ASSUMPTION_MANIPULATION_HIERARCHY", 
-            "Variables should be categorized based on their manipulation difficulty (easy, medium, hard, impossible)"
+            "Variables should be categorized by manipulation difficulty (easy, medium, hard, impossible)"
         )
         
         prompt = f"""
@@ -40,8 +40,8 @@ class LogicExtractor:
         ```
         
         ANALYSIS ASSUMPTIONS:
-        1. {privileged_vars_assumption}
-        2. {user_controlled_vars_assumption}
+        1. {privileged_vars}
+        2. {user_controlled_vars}
         3. {manipulation_hierarchy}
         
         Provide the following analysis:
@@ -54,9 +54,9 @@ class LogicExtractor:
            - hard: Variables that require complex prerequisites or exploits to manipulate
            - impossible: Variables controlled by privileged accounts or set in constructor
         
-        3. Identify all dependencies (functions, modifiers, imported contracts) that the token flow relies on, and categorize them based on risk of error or manipulation using the same scale (easy, medium, hard, impossible).
+        3. Identify all dependencies (functions, modifiers, imported contracts) that the token flow relies on, and categorize them based on risk of error or manipulation using the same scale.
         
-        Format your response as a JSON object with the following structure:
+        Format your response as a JSON object with:
         {{
             "token_flow_description": "detailed description of the token flow",
             "variables": {{
@@ -66,8 +66,7 @@ class LogicExtractor:
                     "manipulation_difficulty": "easy/medium/hard/impossible",
                     "manipulation_method": "how it could potentially be manipulated",
                     "impact_on_token_flow": "how manipulation would affect token flow"
-                }},
-                "variable_name2": {{ ... }}
+                }}
             }},
             "dependencies": {{
                 "dependency_code1": {{
@@ -76,13 +75,11 @@ class LogicExtractor:
                     "manipulation_difficulty": "easy/medium/hard/impossible",
                     "manipulation_method": "how it could potentially be manipulated",
                     "impact_on_token_flow": "how manipulation would affect token flow"
-                }},
-                "dependency_code2": {{ ... }}
+                }}
             }}
         }}
         
-        Include only variables and dependencies that actually impact the token flow amount. Remove any that have no effect.
-        For each variable and dependency, provide detailed explanations of how they could be manipulated and their impact.
+        Include only variables and dependencies that actually impact the token flow amount.
         """
         
         # Call the API
@@ -91,30 +88,28 @@ class LogicExtractor:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
+        # Parse the JSON response
         try:
             result = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
+            # Extract JSON from text if not valid JSON
             content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
+            
             if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
                 try:
-                    result = json.loads(json_str)
+                    result = json.loads(content[start_idx:end_idx])
                 except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
                     result = {
-                        "token_flow_description": "Could not parse response. See raw_response for details.",
+                        "token_flow_description": "Error parsing response",
                         "variables": {},
                         "dependencies": {},
                         "raw_response": content
                     }
             else:
                 result = {
-                    "token_flow_description": "Could not parse response. See raw_response for details.",
+                    "token_flow_description": "Error parsing response",
                     "variables": {},
                     "dependencies": {},
                     "raw_response": content
@@ -122,7 +117,7 @@ class LogicExtractor:
                 
         self.analysis_results = result
         
-        # Save the preprocessing results to a file if output_path is provided
+        # Save results if path provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:
@@ -133,69 +128,45 @@ class LogicExtractor:
     def generate_path(self, code: str, path_context: Dict, iteration: int, output_path: str = None) -> Dict:
         """Generate a code path for analysis based on current iteration and previous findings"""
         
-        # Get variables and dependencies by difficulty level
+        # Define difficulty levels
         difficulty_levels = ["easy", "medium", "hard", "impossible"]
         
-        # Create filtered lists of variables and dependencies based on iteration
+        # Filter variables and dependencies based on iteration
+        excluded_vars = set(path_context.get("excluded_variables", []))
+        
         if iteration == 0:
-            # First iteration - focus only on easiest to manipulate variables and dependencies
+            # First iteration - focus only on easy to manipulate items
             context = "Analyze only variables and dependencies that are easy to manipulate."
             current_difficulty = difficulty_levels[0]
-            
-            # Filter variables by current difficulty
-            variables_to_consider = {
-                var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") == current_difficulty
-            }
-            
-            # Filter dependencies by current difficulty
-            deps_to_consider = {
-                dep_code: dep_info for dep_code, dep_info in self.analysis_results.get("dependencies", {}).items()
-                if dep_info.get("manipulation_difficulty") == current_difficulty
-            }
-            
         elif iteration == 1:
             # Second iteration - add medium difficulty manipulations
-            context = "Analyze variables and dependencies that are medium difficulty to manipulate."
+            context = "Analyze variables and dependencies with medium manipulation difficulty."
             current_difficulty = difficulty_levels[1]
-            
-            # Filter variables by current difficulty
-            variables_to_consider = {
-                var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") == current_difficulty
-            }
-            
-            # Filter dependencies by current difficulty
-            deps_to_consider = {
-                dep_code: dep_info for dep_code, dep_info in self.analysis_results.get("dependencies", {}).items()
-                if dep_info.get("manipulation_difficulty") == current_difficulty
-            }
-            
         elif iteration == 2:
             # Third iteration - add hard difficulty manipulations
             context = "Analyze variables and dependencies that are hard to manipulate."
             current_difficulty = difficulty_levels[2]
-            
-            # Filter variables by current difficulty
+        else:
+            # Later iterations - try combinations of variables and dependencies
+            context = "Analyze combinations of variables and dependencies from different difficulty levels."
+            current_difficulty = "combinations"
+        
+        # Filter variables by difficulty and exclusion list
+        if current_difficulty != "combinations":
             variables_to_consider = {
                 var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") == current_difficulty
+                if var_info.get("manipulation_difficulty") == current_difficulty and var_name not in excluded_vars
             }
             
-            # Filter dependencies by current difficulty
             deps_to_consider = {
                 dep_code: dep_info for dep_code, dep_info in self.analysis_results.get("dependencies", {}).items()
                 if dep_info.get("manipulation_difficulty") == current_difficulty
             }
-            
         else:
-            # Later iterations - try combinations of variables and dependencies
-            context = "Analyze combinations of variables and dependencies from different difficulty levels."
-            
-            # Consider all manipulable variables and dependencies (excluding impossible)
+            # Consider all non-impossible and non-excluded variables/dependencies
             variables_to_consider = {
                 var_name: var_info for var_name, var_info in self.analysis_results.get("variables", {}).items()
-                if var_info.get("manipulation_difficulty") != "impossible"
+                if var_info.get("manipulation_difficulty") != "impossible" and var_name not in excluded_vars
             }
             
             deps_to_consider = {
@@ -244,23 +215,21 @@ class LogicExtractor:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
+        # Parse the JSON response
         try:
             result = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
+            # Extract JSON from text if not valid JSON
             content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
+            
             if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
                 try:
-                    result = json.loads(json_str)
+                    result = json.loads(content[start_idx:end_idx])
                 except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
                     result = {
-                        "code_path": "Could not parse response. See raw_response for details.",
+                        "code_path": "Error parsing response",
                         "analysis_focus": "Error in parsing",
                         "manipulation_strategy": "Error in parsing",
                         "expected_impact": "Error in parsing",
@@ -269,7 +238,7 @@ class LogicExtractor:
                     }
             else:
                 result = {
-                    "code_path": "Could not parse response. See raw_response for details.",
+                    "code_path": "Error parsing response",
                     "analysis_focus": "Error in parsing",
                     "manipulation_strategy": "Error in parsing",
                     "expected_impact": "Error in parsing",
@@ -281,12 +250,12 @@ class LogicExtractor:
         result["iteration_info"] = {
             "iteration": iteration,
             "context": context,
-            "difficulty_level": current_difficulty if iteration < 3 else "combinations",
+            "difficulty_level": current_difficulty,
             "variables_considered": list(variables_to_consider.keys()),
             "dependencies_considered": list(deps_to_consider.keys())
         }
         
-        # Save the path generation results to a file if output_path is provided
+        # Save results if path provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:

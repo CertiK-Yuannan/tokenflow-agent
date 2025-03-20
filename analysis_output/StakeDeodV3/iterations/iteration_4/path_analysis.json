@@ -1,0 +1,21 @@
+{
+  "code_path": "stakeTokensV3 -> availableAmountForClaim -> withdrawTokensV3. In stakeTokensV3, the admin-controlled mappings releasePercentageFromDays and getReferalBonusFromDays are used to set each deposit\u2019s monthlyPercentage and referralPercentage, which then directly affect the computation in availableAmountForClaim. Finally, withdrawTokensV3 uses this computed amount (minus any already withdrawnAmount) to transfer tokens to the user.",
+  "analysis_focus": "Focus on the admin-controlled variables: releasePercentageFromDays[_days] and getReferalBonusFromDays[_days] (which are copied into each deposit\u2019s monthlyPercentage and referralPercentage when staking) as well as the depositInfo[x].depositAmount and depositInfo[x].depositedTimestamp. These values determine how much is claimable for each deposit since the logic calculates elapsed full '30\u2011day' periods. Also consider the referral earnings state variables (users[_userAddress].referalEarning and stakeReferal[_userAddress]) as they add to the overall claimable balance.",
+  "manipulation_strategy": "An attacker (or a colluding admin) could manipulate the bonus percentages by calling setReleasePercentageV3 and setReferalPercentageFromDaysV3 with extremely high values for a given _days key. When an attacker then stakes tokens via stakeTokensV3, the deposit entry will record these manipulated bonus percentages, leading to an exaggerated per-month release bonus. Consequently, in availableAmountForClaim the multiplication of the staked deposit amount by the inflated bonus percentage will yield a withdrawal amount far exceeding a normal proportion of the deposit. Referral bonus fields can similarly be manipulated by influencing getReferalBonusFromDays. This, compounded with the deposit amount and timestamp-based maturity calculation, leads to withdrawal amounts that may drain tokens from the contract.",
+  "expected_impact": "If the manipulation is successful, users (or an attacker) will be able to withdraw an exorbitant number of tokens relative to the original deposit. This could lead to an effective over-withdrawal scenario and potentially drain the contract\u2019s token balance, thereby compromising the token flow and financial stability of the staking system.",
+  "assumptions": "It is assumed that the attacker has admin privileges or can collude with the admin to set the bonus parameters to unreasonably high values. It is also assumed that there are sufficient tokens in the contract to cover the inflated withdrawal amounts, and that no additional safeguards (such as upper bounds on bonus values or multisig governance) are implemented.",
+  "iteration_info": {
+    "iteration": 3,
+    "context": "Analyze combinations of variables and dependencies from different difficulty levels.",
+    "difficulty_level": "combinations",
+    "variables_considered": [
+      "depositInfo[x].depositAmount",
+      "depositInfo[x].depositedTimestamp",
+      "depositInfo[x].timePeriodInDays",
+      "users[_userAddress].referalEarning",
+      "stakeReferal[_userAddress]",
+      "block.timestamp"
+    ],
+    "dependencies_considered": []
+  }
+}

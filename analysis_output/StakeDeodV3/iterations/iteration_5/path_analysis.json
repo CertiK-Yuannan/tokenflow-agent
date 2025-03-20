@@ -1,0 +1,21 @@
+{
+  "code_path": "1. In stakeTokensV3, where the admin-set mappings releasePercentageFromDays[_days] and getReferalBonusFromDays[_days] are used to initialize depositInfo[x].monthlyPercentage and depositInfo[x].referalPercentage respectively. \n2. In availableAmountForClaim, where the calculation uses depositInfo[x].monthlyPercentage to compute the per\u2010month release amount and then multiplies it by the number of 30\u2010day periods elapsed, and where referral earnings (from both users[_userAddress].referalEarning and stakeReferal[_userAddress]) are added to the total claimable amount.\n3. Finally in withdrawTokensV3, where safeTransfer is used to transfer the computed tokens back, and withdrawnAmount is updated.",
+  "analysis_focus": "The focus should be on the admin-controlled bonus parameters: releasePercentageFromDays and getReferalBonusFromDays. In addition, the calculation dependencies in availableAmountForClaim are critical\u2014specifically the variables depositInfo[x].depositAmount, depositInfo[x].depositedTimestamp, and the resulting monthly bonus computation based on the (block.timestamp - depositInfo[x].depositedTimestamp) divided by 30 days.",
+  "manipulation_strategy": "An attacker with admin privileges (or colluding with the admin) can call setReleasePercentageV3 and setReferalPercentageFromDaysV3 with extremely high percentages for a chosen _days value. This would cause every new deposit made with that duration to compute a disproportionately high per-month bonus (depositAmount * huge monthlyPercentage / 1000) and referral bonus. When the user later calls availableAmountForClaim, the contract will calculate an excessive available amount (potentially far exceeding the original staked amount) allowing the attacker to withdraw far more tokens than the user staked, thus draining the contract\u2019s balance. Additionally, the manipulation of the deposit timestamp slightly (via miner influence) could further nudge the month count calculation within the availableAmountForClaim loop.",
+  "expected_impact": "Manipulating these admin-controlled bonus parameter mappings can lead to inflated withdrawal amounts. If successful, this vulnerability could allow an attacker (or a colluding admin) to drain the contract by forcing withdrawals that surpass the total tokens staked, effectively altering the intended token flow and depleting contract funds.",
+  "assumptions": "It is assumed that the administrative functions to set bonus percentages are not constrained by upper limits or further access control beyond the admin role. It is also assumed that the admin account is either compromised or malicious, or governance procedures are weak, allowing for the manipulation of bonus mappings. Lastly, it relies on the contract having a sufficient token balance to cover the artificially inflated withdrawal requests.",
+  "iteration_info": {
+    "iteration": 4,
+    "context": "Analyze combinations of variables and dependencies from different difficulty levels.",
+    "difficulty_level": "combinations",
+    "variables_considered": [
+      "depositInfo[x].depositAmount",
+      "depositInfo[x].depositedTimestamp",
+      "depositInfo[x].timePeriodInDays",
+      "users[_userAddress].referalEarning",
+      "stakeReferal[_userAddress]",
+      "block.timestamp"
+    ],
+    "dependencies_considered": []
+  }
+}

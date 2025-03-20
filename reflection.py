@@ -10,7 +10,7 @@ class Reflection:
     def evaluate_result(self, code: str, action_result: Dict, goal: str, iteration: int, output_path: str = None) -> Dict:
         """Evaluate if the action result meets the goal and provide feedback"""
         
-        # Get assumptions from environment variables or use defaults
+        # Get assumptions from environment variables with defaults
         strict_evaluation = os.environ.get(
             "ASSUMPTION_STRICT_EVALUATION", 
             "Strictly verify whether a variable is truly manipulable to achieve the goal"
@@ -18,18 +18,13 @@ class Reflection:
         
         false_positive_handling = os.environ.get(
             "ASSUMPTION_FALSE_POSITIVE_HANDLING", 
-            "If a manipulation is a false positive, determine if additional conditions are required or if the variable should be excluded"
+            "Identify if a manipulation is a false positive and should be excluded"
         )
         
-        # Add the same assumptions as the logic extractor
+        # Get additional assumptions
         privileged_vars_assumption = os.environ.get(
             "ASSUMPTION_PRIVILEGED_VARS", 
-            "Variables or external dependencies controlled/configured by a privileged account or set in the constructor should be considered impossible to manipulate (if there are no access control, it will be a critical issue)"
-        )
-        
-        user_controlled_vars_assumption = os.environ.get(
-            "ASSUMPTION_USER_CONTROLLED_VARS", 
-            "Variables or external dependencies that users can directly control or update should be considered very easy to manipulate"
+            "Variables controlled by privileged accounts should be considered impossible to manipulate"
         )
         
         prompt = f"""
@@ -49,9 +44,8 @@ class Reflection:
         1. {strict_evaluation}
         2. {false_positive_handling}
         3. {privileged_vars_assumption}
-        4. {user_controlled_vars_assumption}
         
-        Evaluate whether this finding legitimately meets the goal. You must be extremely rigorous and critical.
+        Evaluate whether this finding legitimately meets the goal. Be extremely rigorous and critical.
         
         Consider:
         1. Is the vulnerability real, or is it a false positive?
@@ -59,8 +53,6 @@ class Reflection:
         3. Are all the prerequisites for the attack realistically achievable?
         4. Would the attacker genuinely profit from this in practice?
         5. Are there any flaws in the reasoning or overlooked constraints?
-        6. Is the finding specific and detailed enough to be actionable?
-        7. Is the profit mechanism clearly explained and economically viable?
         
         If you identify any issues, explain exactly what's wrong and why the attack wouldn't work as described.
         
@@ -84,21 +76,19 @@ class Reflection:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
+        # Parse the JSON response
         try:
             result = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
+            # Extract JSON from text if not valid JSON
             content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
+            
             if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
                 try:
-                    result = json.loads(json_str)
+                    result = json.loads(content[start_idx:end_idx])
                 except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
                     result = {
                         "goal_met": False,
                         "finding_quality": "low",
@@ -107,8 +97,8 @@ class Reflection:
                         "overlooked_constraints": "Error in parsing response",
                         "variables_to_exclude": [],
                         "additional_conditions": "Error in parsing response",
-                        "suggestions": "Try a different approach or model",
-                        "new_focus_areas": "Error in parsing response. See raw_response for details.",
+                        "suggestions": "Try a different approach",
+                        "new_focus_areas": "Error in parsing response",
                         "raw_response": content
                     }
             else:
@@ -120,8 +110,8 @@ class Reflection:
                     "overlooked_constraints": "Error in parsing response",
                     "variables_to_exclude": [],
                     "additional_conditions": "Error in parsing response",
-                    "suggestions": "Try a different approach or model",
-                    "new_focus_areas": "Error in parsing response. See raw_response for details.",
+                    "suggestions": "Try a different approach",
+                    "new_focus_areas": "Error in parsing response",
                     "raw_response": content
                 }
         
@@ -132,7 +122,23 @@ class Reflection:
             "vulnerability_type": action_result.get('vulnerability_type', 'Not specified')
         }
         
-        # Save the reflection results to a file if output_path is provided
+        # Ensure variables_to_exclude is always a list
+        if "variables_to_exclude" not in result:
+            result["variables_to_exclude"] = []
+        elif not isinstance(result["variables_to_exclude"], list):
+            if isinstance(result["variables_to_exclude"], str):
+                # Try to convert string to list if it looks like a list
+                if result["variables_to_exclude"].startswith('[') and result["variables_to_exclude"].endswith(']'):
+                    try:
+                        result["variables_to_exclude"] = json.loads(result["variables_to_exclude"])
+                    except:
+                        result["variables_to_exclude"] = [result["variables_to_exclude"]]
+                else:
+                    result["variables_to_exclude"] = [result["variables_to_exclude"]]
+            else:
+                result["variables_to_exclude"] = []
+        
+        # Save the results if output_path is provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:

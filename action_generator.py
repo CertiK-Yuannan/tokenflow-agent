@@ -10,7 +10,7 @@ class ActionGenerator:
     def generate_action(self, code: str, output: Dict, goal: str, iteration: int, output_path: str = None) -> Dict:
         """Generate an action based on the code path and goal"""
         
-        # Get assumptions from environment variables or use defaults
+        # Get assumptions from environment variables with defaults
         progressive_analysis = os.environ.get(
             "ASSUMPTION_PROGRESSIVE_ANALYSIS", 
             "Analysis should progress from easiest to hardest manipulation scenarios"
@@ -18,7 +18,7 @@ class ActionGenerator:
         
         attacker_goal = os.environ.get(
             "ASSUMPTION_ATTACKER_GOAL", 
-            "Determine what an attacker would need to do to a given variable or dependency call to achieve profit"
+            "Determine what an attacker would need to do to achieve profit"
         )
         
         prompt = f"""
@@ -60,7 +60,7 @@ class ActionGenerator:
         4. Provide concrete code examples or transaction sequences that demonstrate the exploit
         5. Explain exactly how the attacker would profit from this exploit
         
-        Be extremely rigorous in your analysis. Consider all possible constraints and conditions that might prevent the exploitation.
+        Be extremely rigorous in your analysis. Consider all possible constraints and conditions.
         
         Format your response as a JSON object with:
         {{
@@ -84,21 +84,19 @@ class ActionGenerator:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Parse the JSON from the response text
+        # Parse the JSON response
         try:
             result = json.loads(response.choices[0].message.content)
         except json.JSONDecodeError:
-            # If the response isn't valid JSON, try to extract JSON from the text
+            # Extract JSON from text if not valid JSON
             content = response.choices[0].message.content
-            # Attempt to find JSON-like structure
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
+            
             if start_idx >= 0 and end_idx > start_idx:
-                json_str = content[start_idx:end_idx]
                 try:
-                    result = json.loads(json_str)
+                    result = json.loads(content[start_idx:end_idx])
                 except json.JSONDecodeError:
-                    # If still not valid, create a basic structure
                     result = {
                         "vulnerability_found": False,
                         "vulnerability_type": "Error in parsing response",
@@ -132,7 +130,7 @@ class ActionGenerator:
             "manipulation_strategy": output.get('manipulation_strategy', 'Not available')
         }
         
-        # Save the action generation results to a file if output_path is provided
+        # Save the results if output_path is provided
         if output_path:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w") as f:
