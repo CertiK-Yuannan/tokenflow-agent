@@ -12,6 +12,11 @@
         "reentrancy_limitation": "If an external dependency is categorized as 'impossible' to manipulate and it does not use a .call method, reentrancy exploits should not be considered valid for this dependency."
       },
       "attack_patterns": {
+        "corner cases attack": " The attacker can trigger bugs that the code does not handle properly, for example enter 0 or input a well-designed value",
+        "repeat transaction attack": "Repeating the same transaction multiple times to exploit a state change",
+        "reentrancy": "Calling back into the contract before state is updated to extract tokens multiple times",
+        "front_running": "Observing pending transactions and inserting transactions to profit from expected state changes",
+        "sandwich_attack": "Inserting transactions between two pending transactions to manipulate state changes"
       }
     },
     "reflection": {

@@ -99,6 +99,7 @@ class Reflection:
         }}}}
         
         Only include variables in the variables_to_exclude field if the vulnerability analysis failed.
+        Include variables in the variables_to_include field if analysis was successful and there might be other issues related to it.
         The variables_to_include field should contain variables that seem promising for future analysis.
         """
         
